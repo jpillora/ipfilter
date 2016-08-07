@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	maxminddb "github.com/oschwald/maxminddb-golang"
-	"github.com/tomasen/realip"
 )
 
 var (
@@ -368,8 +367,9 @@ type ipFilterMiddleware struct {
 }
 
 func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//find "real" ip (deref x-forward-for / x-real-ip)
-	ip := realip.RealIP(r)
+	//use remote addr as it cant be spoofed
+	//TODO also check X-Fowarded-For and friends
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	//show simple forbidden text
 	if !m.IPFilter.Allowed(ip) {
 		w.WriteHeader(http.StatusForbidden)
