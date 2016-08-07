@@ -1,6 +1,6 @@
 # ipfilter
 
-An IP Filter in Go (golang)
+An IP Filter package in Go (golang)
 
 [![GoDoc](https://godoc.org/github.com/jpillora/ipfilter?status.svg)](https://godoc.org/github.com/jpillora/ipfilter)  [![CircleCI](https://circleci.com/gh/jpillora/ipfilter.svg?style=shield)](https://circleci.com/gh/jpillora/ipfilter)
 
@@ -21,7 +21,7 @@ go get github.com/jpillora/ipfilter
 
 ### Usage
 
-Country-block HTTP Middleware
+**Country-block HTTP Middleware**
 
 ```go
 myHandler := http.Handler(...)
@@ -32,7 +32,7 @@ myProtectedHandler := ipfilter.Wrap(myHandler, ipfilter.Options{
 http.ListenAndServe(":8080", myProtectedHandler)
 ```
 
-Country-block stand-alone
+**Country-block stand-alone**
 
 ```go
 f, err := ipfilter.New(ipfilter.Options{
@@ -43,14 +43,14 @@ f.Blocked("116.31.116.51") //=> true (CN)
 f.Allowed("216.58.199.67") //=> true (US)
 ```
 
-Allow your LAN only
+**Allow your LAN only**
 
 ```go
 f, err := ipfilter.New(ipfilter.Options{
     AllowedIPs: []string{"192.168.0.0/24"},
     BlockByDefault: true,
 })
-
+//only allow 192.168.0.X IPs
 f.Allowed("192.168.0.42") //=> true
 f.Allowed("10.0.0.42") //=> false
 ```
@@ -58,11 +58,11 @@ f.Allowed("10.0.0.42") //=> false
 ... and with dynamic list updates
 
 ```go
-//also allow 10.X.X.X
+//and allow 10.X.X.X
 f.AllowIP("10.0.0.0/8")
 f.Allowed("10.0.0.42") //=> true
-//and everyone in Australia
 f.Allowed("203.25.111.68") //=> false
+//and allow everyone in Australia
 f.AllowCode("AU")
 f.Allowed("203.25.111.68") //=> true
 ```
@@ -78,9 +78,9 @@ f.Allowed("203.25.111.68") //=> true
 #### Todo
 
 * Use a good algorithm to perform faster prefix matches
+* Investigate reliability of other detectable attributes
 * Add TOR/anonymizer filter options
-* Great-circle distance filter options ("allow 500KM radius from code/lat,lon")
-    * Investigate reliability
+* Add great-circle distance filter options ("allow 500KM radius from code/lat,lon")
 
 #### Credits
 
