@@ -243,7 +243,7 @@ func (f *IPFilter) AllowISOCode(code string) {
 }
 
 func (f *IPFilter) BlockISOCode(code string) {
-	f.ToggleISOCode(code, true)
+	f.ToggleISOCode(code, false)
 }
 
 func (f *IPFilter) ToggleISOCode(code string, allowed bool) {
@@ -358,6 +358,7 @@ func NetIPToISOCode(db *maxminddb.Reader, ip net.IP) string {
 	if db != nil {
 		db.Lookup(ip, &r)
 	}
+	//DEBUG log.Printf("%s -> '%s'", ip, r.Country.ISOCode)
 	return r.Country.ISOCode
 }
 

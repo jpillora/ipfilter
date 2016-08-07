@@ -26,8 +26,8 @@ Country-block HTTP Middleware
 ```go
 myHandler := http.Handler(...)
 myProtectedHandler := ipfilter.Wrap(myHandler, ipfilter.Options{
-    //block requests from china and russia by IP
-    BlockedISOCodes: []string{"RU", "CN"},
+    //block requests from China and Russia by IP
+    BlockedISOCodes: []string{"CN", "RU"},
 })
 http.ListenAndServe(":8080", myProtectedHandler)
 ```
