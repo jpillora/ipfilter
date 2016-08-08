@@ -308,7 +308,7 @@ func (f *IPFilter) Blocked(ip string) bool {
 //Wrap the provided handler with simple IP blocking middleware
 //using this IP filter and its configuration
 func (f *IPFilter) Wrap(next http.Handler) http.Handler {
-	return &ipFilterMiddleware{next: next}
+	return &ipFilterMiddleware{IPFilter: f, next: next}
 }
 
 //IP string to ISO country code.
