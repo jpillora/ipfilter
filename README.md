@@ -1,6 +1,6 @@
 # ipfilter
 
-An IP Filter package in Go (golang)
+A package for IP Filtering in Go (golang)
 
 [![GoDoc](https://godoc.org/github.com/jpillora/ipfilter?status.svg)](https://godoc.org/github.com/jpillora/ipfilter)  [![CircleCI](https://circleci.com/gh/jpillora/ipfilter.svg?style=shield)](https://circleci.com/gh/jpillora/ipfilter)
 
@@ -16,18 +16,18 @@ go get github.com/jpillora/ipfilter
 * Thread-safe
 * IPv4 / IPv6 support
 * Subnet support
-* HTTP middleware
-* [GeoLite2](https://dev.maxmind.com/geoip/geoip2/geolite2/) support for country-based blocking
+* Location filtering (via [GeoLite2](https://dev.maxmind.com/geoip/geoip2/geolite2/))
+* Simple HTTP middleware
 
 ### Usage
 
 **Country-block HTTP Middleware**
 
 ```go
-myHandler := http.Handler(...)
-myProtectedHandler := ipfilter.Wrap(myHandler, ipfilter.Options{
+h := http.Handler(...)
+myProtectedHandler := ipfilter.Wrap(h, ipfilter.Options{
     //block requests from China and Russia by IP
-    BlockedISOCodes: []string{"CN", "RU"},
+    BlockedCountries: []string{"CN", "RU"},
 })
 http.ListenAndServe(":8080", myProtectedHandler)
 ```
@@ -36,7 +36,7 @@ http.ListenAndServe(":8080", myProtectedHandler)
 
 ```go
 f, err := ipfilter.New(ipfilter.Options{
-    BlockedISOCodes: []string{"CN"},
+    BlockedCountries: []string{"CN"},
 })
 
 f.Blocked("116.31.116.51") //=> true (CN)
@@ -63,8 +63,32 @@ f.AllowIP("10.0.0.0/8")
 f.Allowed("10.0.0.42") //=> true
 f.Allowed("203.25.111.68") //=> false
 //and allow everyone in Australia
-f.AllowCode("AU")
+f.AllowCountry("AU")
 f.Allowed("203.25.111.68") //=> true
+```
+
+**Low-level single IP to country**
+
+```go
+f.IPToCountry("203.25.111.68") //=> "AU"
+```
+
+**Advanced HTTP middleware**
+
+Make your own with:
+
+```go
+func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	//use remote addr as it cant be spoofed
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	//show simple forbidden text
+	if !m.IPFilter.Allowed(ip) {
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		return
+	}
+	//success!
+	m.next.ServeHTTP(w, r)
+}
 ```
 
 #### Issues
@@ -72,7 +96,7 @@ f.Allowed("203.25.111.68") //=> true
 * Due to the nature of IP address allocation, determining location based of a
   single IP address is quite difficult (if you're not Google) and is therefore
   not very reliable. For this reason `BlockByDefault` is off by default.
-* IP DB lookups take on the order of `5µs` to perform, though the initial load
+* IP DB lookups take on the order of `5µs` to perform, though the initial load from disk
   into memory takes takes about `350ms` so be wary of excessive `ipfilter.New` use.
 
 #### Todo
@@ -80,7 +104,7 @@ f.Allowed("203.25.111.68") //=> true
 * Use a good algorithm to perform faster prefix matches
 * Investigate reliability of other detectable attributes
 * Add TOR/anonymizer filter options
-* Add great-circle distance filter options ("allow 500KM radius from code/lat,lon")
+* Add great-circle distance filter options (e.g. Allow 500KM radius from code/lat,lon)
 
 #### Credits
 

@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	DBURL      = "http://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.mmdb.gz"
-	TempDBPath = filepath.Join(os.TempDir(), "ipfilter-GeoLite2-Country.mmdb.gz")
+	DBPublicURL = "http://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.mmdb.gz"
+	DBTempPath  = filepath.Join(os.TempDir(), "ipfilter-GeoLite2-Country.mmdb.gz")
 )
 
 //Options for IPFilter.
@@ -35,9 +35,9 @@ type Options struct {
 	//explicity blocked IPs
 	BlockedIPs []string
 	//explicity allowed country ISO codes
-	AllowedISOCodes []string
+	AllowedCountries []string
 	//explicity blocked country ISO codes
-	BlockedISOCodes []string
+	BlockedCountries []string
 	//in-memory GeoLite2-Country.mmdb file,
 	//if not provided falls back to IPDBPath
 	IPDB []byte
@@ -84,11 +84,11 @@ func new(opts Options) *IPFilter {
 	for _, ip := range opts.AllowedIPs {
 		f.AllowIP(ip)
 	}
-	for _, code := range opts.BlockedISOCodes {
-		f.BlockISOCode(code)
+	for _, code := range opts.BlockedCountries {
+		f.BlockCountry(code)
 	}
-	for _, code := range opts.AllowedISOCodes {
-		f.AllowISOCode(code)
+	for _, code := range opts.AllowedCountries {
+		f.AllowCountry(code)
 	}
 	return f
 }
@@ -130,32 +130,32 @@ func (f *IPFilter) initDB() error {
 		return f.readerDB(f.opts.IPDBPath, file)
 	} else if !f.opts.IPDBNoFetch {
 		//auto fetch
-		if _, err := os.Stat(TempDBPath); os.IsNotExist(err) {
+		if _, err := os.Stat(DBTempPath); os.IsNotExist(err) {
 			//fetch and cache missing file
-			file, err := os.Create(TempDBPath)
+			file, err := os.Create(DBTempPath)
 			if err != nil {
 				return err
 			}
 			defer file.Close()
-			log.Printf("[ipfilter] downloading %s...", DBURL)
-			resp, err := http.Get(DBURL)
+			log.Printf("[ipfilter] downloading %s...", DBPublicURL)
+			resp, err := http.Get(DBPublicURL)
 			if err != nil {
 				return err
 			}
 			defer resp.Body.Close()
 			//store on disk as db loads
 			r := io.TeeReader(resp.Body, file)
-			err = f.readerDB(DBURL, r)
-			log.Printf("[ipfilter] cached: %s", TempDBPath)
+			err = f.readerDB(DBPublicURL, r)
+			log.Printf("[ipfilter] cached: %s", DBTempPath)
 			return err
 		}
 		//load cached
-		file, err := os.Open(TempDBPath)
+		file, err := os.Open(DBTempPath)
 		if err != nil {
 			return err
 		}
 		defer file.Close()
-		return f.readerDB(DBURL, file)
+		return f.readerDB(DBPublicURL, file)
 	}
 	//no db options remain
 	return errors.New("No DB")
@@ -237,15 +237,15 @@ func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 	return false
 }
 
-func (f *IPFilter) AllowISOCode(code string) {
-	f.ToggleISOCode(code, true)
+func (f *IPFilter) AllowCountry(code string) {
+	f.ToggleCountry(code, true)
 }
 
-func (f *IPFilter) BlockISOCode(code string) {
-	f.ToggleISOCode(code, false)
+func (f *IPFilter) BlockCountry(code string) {
+	f.ToggleCountry(code, false)
 }
 
-func (f *IPFilter) ToggleISOCode(code string, allowed bool) {
+func (f *IPFilter) ToggleCountry(code string, allowed bool) {
 	f.mut.Lock()
 	f.codes[code] = allowed
 	f.mut.Unlock()
@@ -289,7 +289,7 @@ func (f *IPFilter) Allowed(ipstr string) bool {
 	}
 	//check country codes
 	f.mut.RUnlock()
-	code := f.NetIPToISOCode(ip)
+	code := f.NetIPToCountry(ip)
 	f.mut.RLock()
 	if code != "" {
 		if allowed, ok := f.codes[code]; ok {
@@ -311,20 +311,22 @@ func (f *IPFilter) Wrap(next http.Handler) http.Handler {
 	return &ipFilterMiddleware{next: next}
 }
 
-//IP string to ISO country code
-func (f *IPFilter) IPToISOCode(ipstr string) string {
+//IP string to ISO country code.
+//Returns an empty string when cannot determine country.
+func (f *IPFilter) IPToCountry(ipstr string) string {
 	if ip := net.ParseIP(ipstr); ip != nil {
-		return f.NetIPToISOCode(ip)
+		return f.NetIPToCountry(ip)
 	}
 	return ""
 }
 
-//net.IP to ISO country code
-func (f *IPFilter) NetIPToISOCode(ip net.IP) string {
+//net.IP to ISO country code.
+//Returns an empty string when cannot determine country.
+func (f *IPFilter) NetIPToCountry(ip net.IP) string {
 	f.mut.RLock()
 	db := f.db
 	f.mut.RUnlock()
-	return NetIPToISOCode(db, ip)
+	return NetIPToCountry(db, ip)
 }
 
 //Wrap is equivalent to NewLazy(opts) then Wrap(next)
@@ -332,16 +334,18 @@ func Wrap(next http.Handler, opts Options) http.Handler {
 	return NewLazy(opts).Wrap(next)
 }
 
-//IPToISOCode is a simple IP-country code lookup
-func IPToISOCode(db *maxminddb.Reader, ipstr string) string {
+//IPToCountry is a simple IP-country code lookup.
+//Returns an empty string when cannot determine country.
+func IPToCountry(db *maxminddb.Reader, ipstr string) string {
 	if ip := net.ParseIP(ipstr); ip != nil {
-		return NetIPToISOCode(db, ip)
+		return NetIPToCountry(db, ip)
 	}
 	return ""
 }
 
-//NetIPToISOCode is a simple IP-country code lookup
-func NetIPToISOCode(db *maxminddb.Reader, ip net.IP) string {
+//NetIPToCountry is a simple IP-country code lookup.
+//Returns an empty string when cannot determine country.
+func NetIPToCountry(db *maxminddb.Reader, ip net.IP) string {
 	r := struct {
 		//TODO(jpillora): lookup more fields and expose more options
 		// IsAnonymous       bool `maxminddb:"is_anonymous"`
@@ -350,15 +354,15 @@ func NetIPToISOCode(db *maxminddb.Reader, ip net.IP) string {
 		// IsPublicProxy     bool `maxminddb:"is_public_proxy"`
 		// IsTorExitNode     bool `maxminddb:"is_tor_exit_node"`
 		Country struct {
-			ISOCode string `maxminddb:"iso_code"`
+			Country string `maxminddb:"iso_code"`
 			// Names   map[string]string `maxminddb:"names"`
 		} `maxminddb:"country"`
 	}{}
 	if db != nil {
 		db.Lookup(ip, &r)
 	}
-	//DEBUG log.Printf("%s -> '%s'", ip, r.Country.ISOCode)
-	return r.Country.ISOCode
+	//DEBUG log.Printf("%s -> '%s'", ip, r.Country.Country)
+	return r.Country.Country
 }
 
 type ipFilterMiddleware struct {
@@ -372,8 +376,7 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	//show simple forbidden text
 	if !m.IPFilter.Allowed(ip) {
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(http.StatusText(http.StatusForbidden)))
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 	//success!

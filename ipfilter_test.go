@@ -36,14 +36,14 @@ func TestManualCountryCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, f.IPToISOCode("203.25.111.68"), "AU")
-	assert.Equal(t, f.IPToISOCode("216.58.199.67"), "US")
+	assert.Equal(t, f.IPToCountry("203.25.111.68"), "AU")
+	assert.Equal(t, f.IPToCountry("216.58.199.67"), "US")
 }
 
 func TestCountryCodeWhiteList(t *testing.T) {
 	f, err := New(Options{
-		AllowedISOCodes: []string{"AU"},
-		BlockByDefault:  true,
+		AllowedCountries: []string{"AU"},
+		BlockByDefault:   true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestCountryCodeWhiteList(t *testing.T) {
 
 func TestCountryCodeBlackList(t *testing.T) {
 	f, err := New(Options{
-		BlockedISOCodes: []string{"RU", "CN"},
+		BlockedCountries: []string{"RU", "CN"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +70,6 @@ func TestDynamicList(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.True(t, f.Allowed("116.31.116.51"), "[1] CN should be allowed")
-	f.BlockISOCode("CN")
+	f.BlockCountry("CN")
 	assert.True(t, f.Blocked("116.31.116.51"), "[1] CN should be blocked")
 }
