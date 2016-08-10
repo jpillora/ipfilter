@@ -21,12 +21,11 @@ var (
 	DBTempPath  = filepath.Join(os.TempDir(), "ipfilter-GeoLite2-Country.mmdb.gz")
 )
 
-//Options for IPFilter.
-//Allowed takes precendence over Blocked.
-//IPs can be IPv4 or IPv6 and can optionally
-//contain subnet masks (/24). Note however, determining if
-//a given IP is included in a subnet requires a linear scan
-//so is less performant than looking up single IPs.
+//Options for IPFilter. Allowed takes precendence over Blocked.
+//IPs can be IPv4 or IPv6 and can optionally contain subnet
+//masks (/24). Note however, determining if a given IP is
+//included in a subnet requires a linear scan so is less performant
+//than looking up single IPs.
 //
 //This could be improved with some algorithmic magic.
 type Options struct {
@@ -129,7 +128,6 @@ func (f *IPFilter) initDB() error {
 		defer file.Close()
 		return f.readerDB(f.opts.IPDBPath, file)
 	} else if !f.opts.IPDBNoFetch {
-		//auto fetch
 		if _, err := os.Stat(DBTempPath); os.IsNotExist(err) {
 			//fetch and cache missing file
 			file, err := os.Create(DBTempPath)
@@ -148,14 +146,15 @@ func (f *IPFilter) initDB() error {
 			err = f.readerDB(DBPublicURL, r)
 			log.Printf("[ipfilter] cached: %s", DBTempPath)
 			return err
+		} else {
+			//load cached
+			file, err := os.Open(DBTempPath)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			return f.readerDB(DBPublicURL, file)
 		}
-		//load cached
-		file, err := os.Open(DBTempPath)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		return f.readerDB(DBPublicURL, file)
 	}
 	//no db options remain
 	return errors.New("No DB")
@@ -179,7 +178,6 @@ func (f *IPFilter) readerDB(filename string, r io.Reader) error {
 
 func (f *IPFilter) bytesDB(b []byte) error {
 	db, err := maxminddb.FromBytes(b)
-
 	if err != nil {
 		return err
 	}
@@ -245,6 +243,7 @@ func (f *IPFilter) BlockCountry(code string) {
 	f.ToggleCountry(code, false)
 }
 
+//ToggleCountry alters a specific country setting
 func (f *IPFilter) ToggleCountry(code string, allowed bool) {
 	f.mut.Lock()
 	f.codes[code] = allowed
@@ -258,9 +257,13 @@ func (f *IPFilter) ToggleDefault(allowed bool) {
 	f.mut.Unlock()
 }
 
-//Allowed returns if a given IP can through the filter
+//Allowed returns if a given IP can pass through the filter
 func (f *IPFilter) Allowed(ipstr string) bool {
-	ip := net.ParseIP(ipstr)
+	return f.NetAllowed(net.ParseIP(ipstr))
+}
+
+//Allowed returns if a given net.IP can pass through the filter
+func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	//invalid ip
 	if ip == nil {
 		return false
@@ -270,7 +273,7 @@ func (f *IPFilter) Allowed(ipstr string) bool {
 	f.mut.RLock()
 	defer f.mut.RUnlock()
 	//check single ips
-	allowed, ok := f.ips[ipstr]
+	allowed, ok := f.ips[ip.String()]
 	if ok {
 		return allowed
 	}
@@ -300,9 +303,14 @@ func (f *IPFilter) Allowed(ipstr string) bool {
 	return f.defaultAllowed
 }
 
-//Blocked returns if a given IP can NOT through the filter
+//Blocked returns if a given IP can NOT pass through the filter
 func (f *IPFilter) Blocked(ip string) bool {
 	return !f.Allowed(ip)
+}
+
+//Blocked returns if a given net.IP can NOT pass through the filter
+func (f *IPFilter) NetBlocked(ip net.IP) bool {
+	return !f.NetAllowed(ip)
 }
 
 //Wrap the provided handler with simple IP blocking middleware

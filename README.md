@@ -67,10 +67,17 @@ f.AllowCountry("AU")
 f.Allowed("203.25.111.68") //=> true
 ```
 
+**Check with `net.IP`**
+
+```go
+f.NetAllowed(net.IP{203,25,111,68}) //=> true
+```
+
 **Low-level single IP to country**
 
 ```go
 f.IPToCountry("203.25.111.68") //=> "AU"
+f.NetIPToCountry(net.IP{203,25,111,68}) //=> "AU"
 ```
 
 **Advanced HTTP middleware**
