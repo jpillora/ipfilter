@@ -41,12 +41,16 @@ type Options struct {
 	//if not provided falls back to IPDBPath
 	IPDB []byte
 	//path to GeoLite2-Country.mmdb[.gz] file,
-	//if not provided falls back to automatically fetch
+	//if not provided defaults to ipfilter.DBTempPath
 	IPDBPath string
 	//disable automatic fetch of GeoLite2-Country.mmdb file
-	//by default, it will be first look in os.TempDir, if missing
-	//it will be fetched, cached on disk, then loaded into memory (~19MB)
+	//by default, when ipfilter.IPDBPath is not found,
+	//ipfilter.IPDBFetchURL will be retrieved and stored at
+	//ipfilter.IPDBPath, then loaded into memory (~19MB)
 	IPDBNoFetch bool
+	//URL of GeoLite2-Country.mmdb[.gz] file,
+	//if not provided defaults to ipfilter.DBPublicURL
+	IPDBFetchURL string
 	//block by default (defaults to allow)
 	BlockByDefault bool
 }
@@ -71,6 +75,12 @@ type subnet struct {
 
 //who uses the new builtin anyway?
 func new(opts Options) *IPFilter {
+	if opts.IPDBFetchURL == "" {
+		opts.IPDBFetchURL = DBPublicURL
+	}
+	if opts.IPDBPath == "" {
+		opts.IPDBPath = DBTempPath
+	}
 	f := &IPFilter{
 		opts:           opts,
 		ips:            map[string]bool{},
@@ -116,48 +126,40 @@ func New(opts Options) (*IPFilter, error) {
 }
 
 func (f *IPFilter) initDB() error {
+	//in-memory
 	if len(f.opts.IPDB) > 0 {
-		//in-memory
 		return f.bytesDB(f.opts.IPDB)
-	} else if f.opts.IPDBPath != "" {
-		//local path
+	}
+	//use local copy
+	if _, err := os.Stat(f.opts.IPDBPath); err == nil {
 		file, err := os.Open(f.opts.IPDBPath)
 		if err != nil {
 			return err
 		}
 		defer file.Close()
-		return f.readerDB(f.opts.IPDBPath, file)
-	} else if !f.opts.IPDBNoFetch {
-		if _, err := os.Stat(DBTempPath); os.IsNotExist(err) {
-			//fetch and cache missing file
-			file, err := os.Create(DBTempPath)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-			log.Printf("[ipfilter] downloading %s...", DBPublicURL)
-			resp, err := http.Get(DBPublicURL)
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-			//store on disk as db loads
-			r := io.TeeReader(resp.Body, file)
-			err = f.readerDB(DBPublicURL, r)
-			log.Printf("[ipfilter] cached: %s", DBTempPath)
-			return err
-		} else {
-			//load cached
-			file, err := os.Open(DBTempPath)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-			return f.readerDB(DBPublicURL, file)
-		}
+		return f.readerDB(f.opts.IPDBFetchURL, file)
 	}
-	//no db options remain
-	return errors.New("No DB")
+	//ensure fetch is allowed
+	if f.opts.IPDBNoFetch {
+		return errors.New("IP DB not found and fetch is disabled")
+	}
+	//fetch and cache missing file
+	file, err := os.Create(f.opts.IPDBPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	log.Printf("[ipfilter] downloading %s...", f.opts.IPDBFetchURL)
+	resp, err := http.Get(f.opts.IPDBFetchURL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	//store on disk as db loads
+	r := io.TeeReader(resp.Body, file)
+	err = f.readerDB(DBPublicURL, r)
+	log.Printf("[ipfilter] cached: %s", f.opts.IPDBPath)
+	return err
 }
 
 func (f *IPFilter) readerDB(filename string, r io.Reader) error {
@@ -245,6 +247,7 @@ func (f *IPFilter) BlockCountry(code string) {
 
 //ToggleCountry alters a specific country setting
 func (f *IPFilter) ToggleCountry(code string, allowed bool) {
+
 	f.mut.Lock()
 	f.codes[code] = allowed
 	f.mut.Unlock()
