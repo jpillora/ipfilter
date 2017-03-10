@@ -131,13 +131,17 @@ func (f *IPFilter) initDB() error {
 		return f.bytesDB(f.opts.IPDB)
 	}
 	//use local copy
-	if _, err := os.Stat(f.opts.IPDBPath); err == nil {
-		file, err := os.Open(f.opts.IPDBPath)
-		if err != nil {
-			return err
+	if fileinfo, err := os.Stat(f.opts.IPDBPath); err == nil {
+		if fileinfo.Size() > 0 {
+			file, err := os.Open(f.opts.IPDBPath)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			return f.readerDB(f.opts.IPDBFetchURL, file)
+		} else {
+			log.Printf("[ipfilter] IP DB is 0 byte size")
 		}
-		defer file.Close()
-		return f.readerDB(f.opts.IPDBFetchURL, file)
 	}
 	//ensure fetch is allowed
 	if f.opts.IPDBNoFetch {
