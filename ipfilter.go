@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jpillora/ipmath"
+	"github.com/miekg/bitradix"
 	maxminddb "github.com/oschwald/maxminddb-golang"
 )
 
@@ -64,7 +66,7 @@ type IPFilter struct {
 	db             *maxminddb.Reader
 	ips            map[string]bool
 	codes          map[string]bool
-	subnets        []*subnet
+	subnets        *bitradix.Radix32
 }
 
 type subnet struct {
@@ -201,7 +203,10 @@ func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 	//check if has subnet
 	if ip, net, err := net.ParseCIDR(str); err == nil {
 		// containing only one ip?
-		if n, total := net.Mask.Size(); n == total {
+		// ipv4 has total 32bits
+		// if there are mask 32bits (/32) it is a single address
+		bits, total := net.Mask.Size()
+		if bits == total {
 			f.mut.Lock()
 			f.ips[ip.String()] = allowed
 			f.mut.Unlock()
@@ -209,21 +214,31 @@ func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 		}
 		//check for existing
 		f.mut.Lock()
-		found := false
-		for _, subnet := range f.subnets {
-			if subnet.str == str {
-				found = true
-				subnet.allowed = allowed
-				break
+		if f.subnets == nil {
+			f.subnets = bitradix.New32()
+		}
+		u := ipmath.ToUInt32(ip)
+		r := f.subnets.Find(u, bits)
+		var s *subnet
+		if r == nil {
+			log.Printf("INSERT %s %v", str, allowed)
+			s = &subnet{
+				str:   str,
+				ipnet: net,
 			}
+			f.subnets.Insert(u, bits, s)
+		} else if r.Value == nil {
+			log.Printf("SWAP %s %v -> %#v", str, allowed, r)
+			s = &subnet{
+				str:   str,
+				ipnet: net,
+			}
+			r.Value = s
+		} else {
+			log.Printf("GOT %s %v -> %#v", str, allowed, r)
+			s = r.Value.(*subnet)
 		}
-		if !found {
-			f.subnets = append(f.subnets, &subnet{
-				str:     str,
-				ipnet:   net,
-				allowed: allowed,
-			})
-		}
+		s.allowed = allowed
 		f.mut.Unlock()
 		return true
 	}
@@ -281,17 +296,20 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 		return allowed
 	}
 	//scan subnets for any allow/block
-	blocked := false
-	for _, subnet := range f.subnets {
-		if subnet.ipnet.Contains(ip) {
-			if subnet.allowed {
+	if f.subnets != nil {
+		blocked := false
+		u := ipmath.ToUInt32(ip)
+		r := f.subnets.Find(u, 32)
+		if r.Value != nil {
+			s := r.Value.(*subnet)
+			if s.allowed {
 				return true
 			}
 			blocked = true
 		}
-	}
-	if blocked {
-		return false
+		if blocked {
+			return false
+		}
 	}
 	//check country codes
 	f.mut.RUnlock()
