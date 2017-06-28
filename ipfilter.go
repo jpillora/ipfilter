@@ -53,6 +53,24 @@ type Options struct {
 	IPDBFetchURL string
 	//block by default (defaults to allow)
 	BlockByDefault bool
+
+	Logger interface {
+		Fatal(v ...interface{})
+		Fatalf(format string, v ...interface{})
+		Fatalln(v ...interface{})
+		Flags() int
+		Output(calldepth int, s string) error
+		Panic(v ...interface{})
+		Panicf(format string, v ...interface{})
+		Panicln(v ...interface{})
+		Prefix() string
+		Print(v ...interface{})
+		Printf(format string, v ...interface{})
+		Println(v ...interface{})
+		SetFlags(flag int)
+		SetOutput(w io.Writer)
+		SetPrefix(prefix string)
+	}
 }
 
 type IPFilter struct {
@@ -80,6 +98,10 @@ func new(opts Options) *IPFilter {
 	}
 	if opts.IPDBPath == "" {
 		opts.IPDBPath = DBTempPath
+	}
+	if opts.Logger == nil {
+		flags := log.LstdFlags
+		opts.Logger = log.New(os.Stdout, "", flags)
 	}
 	f := &IPFilter{
 		opts:           opts,
@@ -109,7 +131,7 @@ func NewLazy(opts Options) *IPFilter {
 	f := new(opts)
 	go func() {
 		if err := f.initDB(); err != nil {
-			log.Printf("[ipfilter] failed to intilise db: %s", err)
+			f.opts.Logger.Printf("[ipfilter] failed to intilise db: %s", err)
 		}
 	}()
 	return f
@@ -140,7 +162,7 @@ func (f *IPFilter) initDB() error {
 			defer file.Close()
 			return f.readerDB(f.opts.IPDBFetchURL, file)
 		} else {
-			log.Printf("[ipfilter] IP DB is 0 byte size")
+			f.opts.Logger.Printf("[ipfilter] IP DB is 0 byte size")
 		}
 	}
 	//ensure fetch is allowed
@@ -153,7 +175,7 @@ func (f *IPFilter) initDB() error {
 		return err
 	}
 	defer file.Close()
-	log.Printf("[ipfilter] downloading %s...", f.opts.IPDBFetchURL)
+	f.opts.Logger.Printf("[ipfilter] downloading %s...", f.opts.IPDBFetchURL)
 	resp, err := http.Get(f.opts.IPDBFetchURL)
 	if err != nil {
 		return err
@@ -162,7 +184,7 @@ func (f *IPFilter) initDB() error {
 	//store on disk as db loads
 	r := io.TeeReader(resp.Body, file)
 	err = f.readerDB(DBPublicURL, r)
-	log.Printf("[ipfilter] cached: %s", f.opts.IPDBPath)
+	f.opts.Logger.Printf("[ipfilter] cached: %s", f.opts.IPDBPath)
 	return err
 }
 
