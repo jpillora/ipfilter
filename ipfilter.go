@@ -146,7 +146,13 @@ func (f *IPFilter) initDB() error {
 				return err
 			}
 			defer file.Close()
-			return f.readerDB(f.opts.IPDBFetchURL, file)
+			if err = f.readerDB(f.opts.IPDBFetchURL, file); err != nil {
+				f.opts.Logger.Printf("[ipfilter] error reading db file %v", err)
+				if errDel := os.Remove(f.opts.IPDBPath); errDel != nil {
+					f.opts.Logger.Printf("[ipfilter] error removing bad file %v", f.opts.IPDBPath)
+				}
+			}
+			return err
 		} else {
 			f.opts.Logger.Printf("[ipfilter] IP DB is 0 byte size")
 		}
