@@ -21,7 +21,7 @@ go get github.com/jpillora/ipfilter
 
 ### Usage
 
-**Country-block HTTP Middleware**
+**Country-block HTTP middleware**
 
 ```go
 h := http.Handler(...)
@@ -43,7 +43,25 @@ f.Blocked("116.31.116.51") //=> true (CN)
 f.Allowed("216.58.199.67") //=> true (US)
 ```
 
-**Allow your LAN only**
+**Async allow LAN hosts middleware**
+
+```go
+f, err := ipfilter.New(ipfilter.Options{
+    BlockByDefault: true,
+})
+
+go func() {
+	time.Sleep(15 * time.Second)
+	//react to admin change....
+	f.AllowIP("192.168.0.23")
+}()
+
+h := http.Handler(...)
+myProtectedHandler := f.Wrap(h)
+http.ListenAndServe(":8080", myProtectedHandler)
+```
+
+**Allow your entire LAN only**
 
 ```go
 f, err := ipfilter.New(ipfilter.Options{
