@@ -77,8 +77,8 @@ type subnet struct {
 	allowed bool
 }
 
-//who uses the new builtin anyway?
-func new(opts Options) *IPFilter {
+//NewNoDB constructs IPFilter instance without downloading DB.
+func NewNoDB(opts Options) *IPFilter {
 	if opts.IPDBFetchURL == "" {
 		opts.IPDBFetchURL = DBPublicURL
 	}
@@ -110,11 +110,11 @@ func new(opts Options) *IPFilter {
 	return f
 }
 
-//NewLazy performs database intilisation in a goroutine.
-//During this intilisation, any DB (country code) lookups
+//NewLazy performs database initialization in a goroutine.
+//During this initialization, any DB (country code) lookups
 //will be skipped. Errors will be logged instead of returned.
 func NewLazy(opts Options) *IPFilter {
-	f := new(opts)
+	f := NewNoDB(opts)
 	go func() {
 		if err := f.initDB(); err != nil {
 			f.opts.Logger.Printf("[ipfilter] failed to intilise db: %s", err)
@@ -123,10 +123,10 @@ func NewLazy(opts Options) *IPFilter {
 	return f
 }
 
-//New blocks during database intilisation and checks
+//New blocks during database initialization and checks
 //validity IP strings. returns an error on failure.
 func New(opts Options) (*IPFilter, error) {
-	f := new(opts)
+	f := NewNoDB(opts)
 	if err := f.initDB(); err != nil {
 		return nil, err
 	}
