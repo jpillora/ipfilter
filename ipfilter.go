@@ -140,13 +140,14 @@ func (f *IPFilter) initDB() error {
 	}
 	//use local copy
 	if fileinfo, err := os.Stat(f.opts.IPDBPath); err == nil {
+		// f.opts.Logger.Printf("[ipfilter] IPDBPath %q Found", f.opts.IPDBPath)
 		if fileinfo.Size() > 0 {
 			file, err := os.Open(f.opts.IPDBPath)
 			if err != nil {
 				return err
 			}
 			defer file.Close()
-			if err = f.readerDB(f.opts.IPDBFetchURL, file); err != nil {
+			if err = f.readerDB(f.opts.IPDBPath, file); err != nil {
 				f.opts.Logger.Printf("[ipfilter] error reading db file %v", err)
 				if errDel := os.Remove(f.opts.IPDBPath); errDel != nil {
 					f.opts.Logger.Printf("[ipfilter] error removing bad file %v", f.opts.IPDBPath)
@@ -175,7 +176,7 @@ func (f *IPFilter) initDB() error {
 	defer resp.Body.Close()
 	//store on disk as db loads
 	r := io.TeeReader(resp.Body, file)
-	err = f.readerDB(DBPublicURL, r)
+	err = f.readerDB(f.opts.IPDBPath, r)
 	f.opts.Logger.Printf("[ipfilter] cached: %s", f.opts.IPDBPath)
 	return err
 }
