@@ -400,14 +400,33 @@ type ipFilterMiddleware struct {
 }
 
 func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//use remote addr as it cant be spoofed
-	//TODO also check X-Fowarded-For and friends
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	//show simple forbidden text
-	if !m.IPFilter.Allowed(ip) {
+	if !m.IPFilter.Allowed(getRequestIP(r)) {
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 	//success!
 	m.next.ServeHTTP(w, r)
+}
+
+// getRequestIP return Client IP of a Request
+func getRequestIP(req *http.Request) string {
+	cip := req.Header.Get("X-Forwarded-For")
+	if pos := strings.IndexByte(cip, ','); pos >= 0 {
+		cip = cip[0:pos]
+	}
+
+	if cip = strings.TrimSpace(cip); cip != "" {
+		return cip
+	}
+
+	if cip = strings.TrimSpace(req.Header.Get("X-Real-Ip")); cip != "" {
+		return cip
+	}
+
+	if ip, _, err := net.SplitHostPort(strings.TrimSpace(req.RemoteAddr)); err == nil {
+		return ip
+	}
+
+	return ""
 }
