@@ -140,7 +140,6 @@ func (f *IPFilter) initDB() error {
 	}
 	//use local copy
 	if fileinfo, err := os.Stat(f.opts.IPDBPath); err == nil {
-		// f.opts.Logger.Printf("[ipfilter] IPDBPath %q Found", f.opts.IPDBPath)
 		if fileinfo.Size() > 0 {
 			file, err := os.Open(f.opts.IPDBPath)
 			if err != nil {
