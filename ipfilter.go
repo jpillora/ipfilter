@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	maxminddb "github.com/oschwald/maxminddb-golang"
+	"github.com/tomasen/realip"
 )
 
 var (
@@ -53,6 +54,8 @@ type Options struct {
 	IPDBFetchURL string
 	//block by default (defaults to allow)
 	BlockByDefault bool
+	// TrustProxy enable check request IP from proxy
+	TrustProxy bool
 
 	Logger interface {
 		Printf(format string, v ...interface{})
@@ -400,33 +403,17 @@ type ipFilterMiddleware struct {
 }
 
 func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//show simple forbidden text
-	if !m.IPFilter.Allowed(getRequestIP(r)) {
+	var remoteIP string
+	if m.opts.TrustProxy {
+		remoteIP = realip.FromRequest(r)
+	} else {
+		remoteIP, _, _ = net.SplitHostPort(r.RemoteAddr)
+	}
+	if !m.IPFilter.Allowed(remoteIP) {
+		//show simple forbidden text
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 	//success!
 	m.next.ServeHTTP(w, r)
-}
-
-// getRequestIP return Client IP of a Request
-func getRequestIP(req *http.Request) string {
-	cip := req.Header.Get("X-Forwarded-For")
-	if pos := strings.IndexByte(cip, ','); pos >= 0 {
-		cip = cip[0:pos]
-	}
-
-	if cip = strings.TrimSpace(cip); cip != "" {
-		return cip
-	}
-
-	if cip = strings.TrimSpace(req.Header.Get("X-Real-Ip")); cip != "" {
-		return cip
-	}
-
-	if ip, _, err := net.SplitHostPort(strings.TrimSpace(req.RemoteAddr)); err == nil {
-		return ip
-	}
-
-	return ""
 }
