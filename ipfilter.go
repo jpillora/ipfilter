@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	maxminddb "github.com/oschwald/maxminddb-golang"
+	"github.com/tomasen/realip"
 )
 
 var (
@@ -53,6 +54,8 @@ type Options struct {
 	IPDBFetchURL string
 	//block by default (defaults to allow)
 	BlockByDefault bool
+	// TrustProxy enable check request IP from proxy
+	TrustProxy bool
 
 	Logger interface {
 		Printf(format string, v ...interface{})
@@ -400,11 +403,14 @@ type ipFilterMiddleware struct {
 }
 
 func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//use remote addr as it cant be spoofed
-	//TODO also check X-Fowarded-For and friends
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	//show simple forbidden text
-	if !m.IPFilter.Allowed(ip) {
+	var remoteIP string
+	if m.opts.TrustProxy {
+		remoteIP = realip.FromRequest(r)
+	} else {
+		remoteIP, _, _ = net.SplitHostPort(r.RemoteAddr)
+	}
+	if !m.IPFilter.Allowed(remoteIP) {
+		//show simple forbidden text
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
