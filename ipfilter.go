@@ -156,9 +156,8 @@ func (f *IPFilter) initDB() error {
 				}
 			}
 			return err
-		} else {
-			f.opts.Logger.Printf("[ipfilter] IP DB is 0 byte size")
 		}
+		f.opts.Logger.Printf("[ipfilter] IP DB is 0 byte size")
 	}
 	//ensure fetch is allowed
 	if f.opts.IPDBNoFetch {
@@ -286,7 +285,7 @@ func (f *IPFilter) Allowed(ipstr string) bool {
 	return f.NetAllowed(net.ParseIP(ipstr))
 }
 
-//Allowed returns if a given net.IP can pass through the filter
+//NetAllowed returns if a given net.IP can pass through the filter
 func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	//invalid ip
 	if ip == nil {
@@ -332,7 +331,7 @@ func (f *IPFilter) Blocked(ip string) bool {
 	return !f.Allowed(ip)
 }
 
-//Blocked returns if a given net.IP can NOT pass through the filter
+//NetBlocked returns if a given net.IP can NOT pass through the filter
 func (f *IPFilter) NetBlocked(ip net.IP) bool {
 	return !f.NetAllowed(ip)
 }
@@ -343,7 +342,7 @@ func (f *IPFilter) Wrap(next http.Handler) http.Handler {
 	return &ipFilterMiddleware{IPFilter: f, next: next}
 }
 
-//IP string to ISO country code.
+//IPToCountry returns the IP's ISO country code.
 //Returns an empty string when cannot determine country.
 func (f *IPFilter) IPToCountry(ipstr string) string {
 	if ip := net.ParseIP(ipstr); ip != nil {
@@ -352,7 +351,7 @@ func (f *IPFilter) IPToCountry(ipstr string) string {
 	return ""
 }
 
-//net.IP to ISO country code.
+//NetIPToCountry returns the net.IP's ISO country code.
 //Returns an empty string when cannot determine country.
 func (f *IPFilter) NetIPToCountry(ip net.IP) string {
 	f.mut.RLock()
