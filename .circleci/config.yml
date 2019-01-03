@@ -9,7 +9,11 @@ jobs:
       - run:
           name: Fetch depedencies
           command: |
-            go get -v .
+            go get -v ./...
+      - run:
+          name: Fetch test dependencies
+          command: |
+            go get -v github.com/stretchr/testify
       - run:
           name: Run tests
           command: |
