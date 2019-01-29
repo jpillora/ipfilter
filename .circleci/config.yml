@@ -3,7 +3,7 @@ jobs:
   build:
     docker:
       - image: circleci/golang:1
-    working_directory: /go/src/github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}
+    working_directory: /go/src/github.com/jpillora/ipfilter
     steps:
       - checkout
       - run: go get -v -t -d ./...
