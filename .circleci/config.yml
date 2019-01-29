@@ -1,20 +1,10 @@
 version: 2
 jobs:
   build:
-    working_directory: ~/app
     docker:
-      - image: circleci/golang
+      - image: circleci/golang:1
+    working_directory: /go/src/github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}
     steps:
       - checkout
-      - run:
-          name: Fetch depedencies
-          command: |
-            go get -v ./...
-      - run:
-          name: Fetch test dependencies
-          command: |
-            go get -v github.com/stretchr/testify
-      - run:
-          name: Run tests
-          command: |
-            go test -v
+      - run: go get -v -t -d ./...
+      - run: go test -v ./...
