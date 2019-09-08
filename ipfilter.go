@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -89,8 +90,8 @@ func NewNoDB(opts Options) *IPFilter {
 		opts.IPDBPath = DBTempPath
 	}
 	if opts.Logger == nil {
-		flags := log.LstdFlags
-		opts.Logger = log.New(os.Stdout, "", flags)
+		//disable logging by default
+		opts.Logger = log.New(ioutil.Discard, "", 0)
 	}
 	f := &IPFilter{
 		opts:           opts,
@@ -120,7 +121,7 @@ func NewLazy(opts Options) *IPFilter {
 	f := NewNoDB(opts)
 	go func() {
 		if err := f.initDB(); err != nil {
-			f.opts.Logger.Printf("[ipfilter] failed to intilise db: %s", err)
+			f.printf("failed to intilise db: %s", err)
 		}
 	}()
 	return f
@@ -134,6 +135,12 @@ func New(opts Options) (*IPFilter, error) {
 		return nil, err
 	}
 	return f, nil
+}
+
+func (f *IPFilter) printf(format string, args ...interface{}) {
+	if l := f.opts.Logger; l != nil {
+		l.Printf("[ipfilter] "+format, args...)
+	}
 }
 
 func (f *IPFilter) initDB() error {
@@ -150,14 +157,14 @@ func (f *IPFilter) initDB() error {
 			}
 			defer file.Close()
 			if err = f.readerDB(f.opts.IPDBFetchURL, file); err != nil {
-				f.opts.Logger.Printf("[ipfilter] error reading db file %v", err)
+				f.printf("error reading db file %v", err)
 				if errDel := os.Remove(f.opts.IPDBPath); errDel != nil {
-					f.opts.Logger.Printf("[ipfilter] error removing bad file %v", f.opts.IPDBPath)
+					f.printf("error removing bad file %v", f.opts.IPDBPath)
 				}
 			}
 			return err
 		}
-		f.opts.Logger.Printf("[ipfilter] IP DB is 0 byte size")
+		f.printf("IP DB is 0 bytes")
 	}
 	//ensure fetch is allowed
 	if f.opts.IPDBNoFetch {
@@ -169,7 +176,7 @@ func (f *IPFilter) initDB() error {
 		return err
 	}
 	defer file.Close()
-	f.opts.Logger.Printf("[ipfilter] downloading %s...", f.opts.IPDBFetchURL)
+	f.printf("downloading %s...", f.opts.IPDBFetchURL)
 	resp, err := http.Get(f.opts.IPDBFetchURL)
 	if err != nil {
 		return err
@@ -178,7 +185,6 @@ func (f *IPFilter) initDB() error {
 	//store on disk as db loads
 	r := io.TeeReader(resp.Body, file)
 	err = f.readerDB(DBPublicURL, r)
-	f.opts.Logger.Printf("[ipfilter] cached: %s", f.opts.IPDBPath)
 	return err
 }
 
@@ -206,6 +212,7 @@ func (f *IPFilter) bytesDB(b []byte) error {
 	f.mut.Lock()
 	f.db = db
 	f.mut.Unlock()
+	f.printf("loaded database")
 	return nil
 }
 
@@ -408,8 +415,14 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		remoteIP, _, _ = net.SplitHostPort(r.RemoteAddr)
 	}
-	if !m.IPFilter.Allowed(remoteIP) {
+	allowed := m.IPFilter.Allowed(remoteIP)
+	//special case localhost ipv4
+	if !allowed && remoteIP == "::1" && m.IPFilter.Allowed("127.0.0.1") {
+		allowed = true
+	}
+	if !allowed {
 		//show simple forbidden text
+		m.printf("blocked %s", remoteIP)
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
