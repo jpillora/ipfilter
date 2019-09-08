@@ -23,13 +23,15 @@ var (
 	DBTempPath  = filepath.Join(os.TempDir(), "ipfilter-GeoLite2-Country.mmdb.gz")
 )
 
-//Options for IPFilter. Allowed takes precendence over Blocked.
+//Options for IPFilter. Allow supercedes Block for IP checks
+//across all matching subnets, whereas country checks use the
+//latest Allow/Block setting.
 //IPs can be IPv4 or IPv6 and can optionally contain subnet
-//masks (/24). Note however, determining if a given IP is
+//masks (e.g. /24). Note however, determining if a given IP is
 //included in a subnet requires a linear scan so is less performant
 //than looking up single IPs.
 //
-//This could be improved with some algorithmic magic.
+//This could be improved with cidr range prefix tree.
 type Options struct {
 	//explicity allowed IPs
 	AllowedIPs []string
@@ -57,7 +59,7 @@ type Options struct {
 	BlockByDefault bool
 	// TrustProxy enable check request IP from proxy
 	TrustProxy bool
-
+	// Logger enables logging, printing using the provided interface
 	Logger interface {
 		Printf(format string, v ...interface{})
 	}
@@ -227,7 +229,7 @@ func (f *IPFilter) BlockIP(ip string) bool {
 func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 	//check if has subnet
 	if ip, net, err := net.ParseCIDR(str); err == nil {
-		// containing only one ip?
+		// containing only one ip? (no bits masked)
 		if n, total := net.Mask.Size(); n == total {
 			f.mut.Lock()
 			f.ips[ip.String()] = allowed
@@ -254,7 +256,7 @@ func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 		f.mut.Unlock()
 		return true
 	}
-	//check if plain ip
+	//check if plain ip (/32)
 	if ip := net.ParseIP(str); ip != nil {
 		f.mut.Lock()
 		f.ips[ip.String()] = allowed
