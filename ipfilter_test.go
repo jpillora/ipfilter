@@ -9,7 +9,7 @@ import (
 )
 
 func TestSingleIP(t *testing.T) {
-	f := ipfilter.New(Options{
+	f := ipfilter.New(ipfilter.Options{
 		AllowedIPs:     []string{"222.25.118.1"},
 		BlockByDefault: true,
 	})
@@ -20,7 +20,7 @@ func TestSingleIP(t *testing.T) {
 }
 
 func TestSubnetIP(t *testing.T) {
-	f := ipfilter.New(Options{
+	f := ipfilter.New(ipfilter.Options{
 		AllowedIPs:     []string{"10.0.0.0/16"},
 		BlockByDefault: true,
 	})
@@ -30,12 +30,12 @@ func TestSubnetIP(t *testing.T) {
 }
 
 func TestManualCountryCode(t *testing.T) {
-	assert.Equal(t, IPToCountry("203.25.111.68"), "AU")
-	assert.Equal(t, IPToCountry("216.58.199.67"), "US")
+	assert.Equal(t, ipfilter.IPToCountry("203.25.111.68"), "AU")
+	assert.Equal(t, ipfilter.IPToCountry("216.58.199.67"), "US")
 }
 
 func TestCountryCodeWhiteList(t *testing.T) {
-	f := ipfilter.New(Options{
+	f := ipfilter.New(ipfilter.Options{
 		AllowedCountries: []string{"AU"},
 		BlockByDefault:   true,
 	})
@@ -44,7 +44,7 @@ func TestCountryCodeWhiteList(t *testing.T) {
 }
 
 func TestCountryCodeBlackList(t *testing.T) {
-	f := ipfilter.New(Options{
+	f := ipfilter.New(ipfilter.Options{
 		BlockedCountries: []string{"RU", "CN"},
 	})
 	assert.True(t, f.Allowed("203.25.111.68"), "[1] AU should be allowed")
@@ -53,7 +53,7 @@ func TestCountryCodeBlackList(t *testing.T) {
 }
 
 func TestDynamicList(t *testing.T) {
-	f := ipfilter.New(Options{})
+	f := ipfilter.New(ipfilter.Options{})
 	assert.True(t, f.Allowed("116.31.116.51"), "[1] CN should be allowed")
 	f.BlockCountry("CN")
 	assert.True(t, f.Blocked("116.31.116.51"), "[1] CN should be blocked")
