@@ -2,7 +2,7 @@
 
 A package for IP Filtering in Go (golang)
 
-[![GoDoc](https://godoc.org/github.com/jpillora/ipfilter?status.svg)](https://godoc.org/github.com/jpillora/ipfilter)  [![CircleCI](https://circleci.com/gh/jpillora/ipfilter.svg?style=shield)](https://circleci.com/gh/jpillora/ipfilter)
+[![GoDoc](https://godoc.org/github.com/jpillora/ipfilter?status.svg)](https://godoc.org/github.com/jpillora/ipfilter)  [![Tests](https://github.com/jpillora/ipfilter/workflows/Test/badge.svg)](https://github.com/jpillora/ipfilter/actions?workflow=Test)
 
 ### Install
 
@@ -16,7 +16,7 @@ go get github.com/jpillora/ipfilter
 * Thread-safe
 * IPv4 / IPv6 support
 * Subnet support
-* Location filtering (via [GeoLite2](https://dev.maxmind.com/geoip/geoip2/geolite2/))
+* Location filtering (via [phuslu/geoip](https://github.com/phuslu/geoip)
 * Simple HTTP middleware
 
 ### Usage
@@ -133,12 +133,16 @@ func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 #### Credits
 
-* github.com/oschwald/maxminddb-golang
-* This software uses GeoLite2 data created by MaxMind, available from http://www.maxmind.com
+* This site or product includes IP2Location LITE data available from http://www.ip2location.com
+
+#### Change log
+
+* v1.0.0 Use MaxMindDB IP data
+* v1.1.0 Use IP2Location LITE IP data
 
 #### MIT License
 
-Copyright © 2016 &lt;dev@jpillora.com&gt;
+Copyright © 2020 &lt;dev@jpillora.com&gt;
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
