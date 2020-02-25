@@ -37,6 +37,11 @@ type Options struct {
 	Logger interface {
 		Printf(format string, v ...interface{})
 	}
+	// These fields currently have no effect
+	IPDB         []byte
+	IPDBPath     string
+	IPDBNoFetch  bool
+	IPDBFetchURL string
 }
 
 type IPFilter struct {
@@ -265,4 +270,22 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	//success!
 	m.next.ServeHTTP(w, r)
+}
+
+//NewNoDB is the same as New
+func NewNoDB(opts Options) *IPFilter {
+	return New(opts)
+}
+
+//NewLazy is the same as New
+func NewLazy(opts Options) *IPFilter {
+	return New(opts)
+}
+
+func (f *IPFilter) IPToCountry(ipstr string) string {
+	return IPToCountry(ipstr)
+}
+
+func (f *IPFilter) NetIPToCountry(ip net.IP) string {
+	return NetIPToCountry(ip)
 }
