@@ -35,7 +35,7 @@ http.ListenAndServe(":8080", myProtectedHandler)
 **Country-block stand-alone**
 
 ```go
-f, err := ipfilter.New(ipfilter.Options{
+f := ipfilter.New(ipfilter.Options{
     BlockedCountries: []string{"CN"},
 })
 
@@ -46,7 +46,7 @@ f.Allowed("216.58.199.67") //=> true (US)
 **Async allow LAN hosts middleware**
 
 ```go
-f, err := ipfilter.New(ipfilter.Options{
+f := ipfilter.New(ipfilter.Options{
     BlockByDefault: true,
 })
 
@@ -64,7 +64,7 @@ http.ListenAndServe(":8080", myProtectedHandler)
 **Allow your entire LAN only**
 
 ```go
-f, err := ipfilter.New(ipfilter.Options{
+f := ipfilter.New(ipfilter.Options{
     AllowedIPs: []string{"192.168.0.0/24"},
     BlockByDefault: true,
 })
@@ -121,8 +121,6 @@ func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 * Due to the nature of IP address allocation, determining location based of a
   single IP address is quite difficult (if you're not Google) and is therefore
   not very reliable. For this reason `BlockByDefault` is off by default.
-* IP DB lookups take on the order of `5µs` to perform, though the initial load from disk
-  into memory takes takes about `350ms` so be wary of excessive `ipfilter.New` use.
 
 #### Todo
 
