@@ -16,7 +16,7 @@ go get github.com/jpillora/ipfilter
 * Thread-safe
 * IPv4 / IPv6 support
 * Subnet support
-* Location filtering (via [phuslu/iploc](https://github.com/phuslu/iploc)
+* Location filtering (via [phuslu/iploc](https://github.com/phuslu/iploc))
 * Simple HTTP middleware
 
 ### Usage
