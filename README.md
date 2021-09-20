@@ -137,3 +137,4 @@ func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 * v1.0.0 Use MaxMindDB IP data
 * v1.1.0 Use IP2Location LITE IP data
+* v1.2.3 Upgrade iploc, requires Go 1.16
