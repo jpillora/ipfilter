@@ -18,6 +18,7 @@ go get github.com/jpillora/ipfilter
 * Subnet support
 * Location filtering (via [phuslu/iploc](https://github.com/phuslu/iploc))
 * Simple HTTP middleware
+* Simple gRPC interceptor
 
 ### Usage
 
@@ -116,6 +117,29 @@ func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
+### gRPC Usage
+
+gRPC provides an interceptor mechanism to support actions on a request before it is processed.
+This package provides support for:
+* Unary Server
+* Stream Server
+
+When registering the service, create a filter and attach the interceptor using the [go-grpc-middleware](https://github.com/grpc-ecosystem/go-grpc-middleware) helper:
+
+```go
+import grpcmiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
+
+f := ipfilter.New(ipfilter.Options{
+    AllowedIPs:     []string{"222.25.118.1"},
+    BlockByDefault: true,
+})
+server := grpc.NewServer(
+	grpc.UnaryInterceptor(grpcmiddleware.ChainUnaryServer(
+		f.IPFilterUnaryServerInterceptor(),
+	)), 
+)
+```
+
 #### Issues
 
 * Due to the nature of IP address allocation, determining location based of a
@@ -138,3 +162,4 @@ func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 * v1.0.0 Use MaxMindDB IP data
 * v1.1.0 Use IP2Location LITE IP data
 * v1.2.3 Upgrade iploc, requires Go 1.16
+* v1.3.0 Added support for gRPC

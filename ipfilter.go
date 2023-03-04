@@ -1,25 +1,33 @@
 package ipfilter
 
 import (
-	"io/ioutil"
+	"context"
+	"fmt"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/phuslu/iploc"
 	"github.com/tomasen/realip"
+	"google.golang.org/grpc"
 )
 
-//Options for IPFilter. Allow supercedes Block for IP checks
-//across all matching subnets, whereas country checks use the
-//latest Allow/Block setting.
-//IPs can be IPv4 or IPv6 and can optionally contain subnet
-//masks (e.g. /24). Note however, determining if a given IP is
-//included in a subnet requires a linear scan so is less performant
-//than looking up single IPs.
+// Options for IPFilter. Allow supercedes Block for IP checks
+// across all matching subnets, whereas country checks use the
+// latest Allow/Block setting.
+// IPs can be IPv4 or IPv6 and can optionally contain subnet
+// masks (e.g. /24). Note however, determining if a given IP is
+// included in a subnet requires a linear scan so is less performant
+// than looking up single IPs.
 //
-//This could be improved with cidr range prefix tree.
+// This could be improved with cidr range prefix tree.
 type Options struct {
 	//explicity allowed IPs
 	AllowedIPs []string
@@ -61,11 +69,11 @@ type subnet struct {
 	allowed bool
 }
 
-//New constructs IPFilter instance without downloading DB.
+// New constructs IPFilter instance without downloading DB.
 func New(opts Options) *IPFilter {
 	if opts.Logger == nil {
 		//disable logging by default
-		opts.Logger = log.New(ioutil.Discard, "", 0)
+		opts.Logger = log.New(io.Discard, "", 0)
 	}
 	f := &IPFilter{
 		opts:           opts,
@@ -104,9 +112,9 @@ func (f *IPFilter) BlockIP(ip string) bool {
 
 func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 	//check if has subnet
-	if ip, net, err := net.ParseCIDR(str); err == nil {
+	if ip, ipNet, err := net.ParseCIDR(str); err == nil {
 		// containing only one ip? (no bits masked)
-		if n, total := net.Mask.Size(); n == total {
+		if n, total := ipNet.Mask.Size(); n == total {
 			f.mut.Lock()
 			f.ips[ip.String()] = allowed
 			f.mut.Unlock()
@@ -125,7 +133,7 @@ func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 		if !found {
 			f.subnets = append(f.subnets, &subnet{
 				str:     str,
-				ipnet:   net,
+				ipnet:   ipNet,
 				allowed: allowed,
 			})
 		}
@@ -150,7 +158,7 @@ func (f *IPFilter) BlockCountry(code string) {
 	f.ToggleCountry(code, false)
 }
 
-//ToggleCountry alters a specific country setting
+// ToggleCountry alters a specific country setting
 func (f *IPFilter) ToggleCountry(code string, allowed bool) {
 
 	f.mut.Lock()
@@ -158,19 +166,19 @@ func (f *IPFilter) ToggleCountry(code string, allowed bool) {
 	f.mut.Unlock()
 }
 
-//ToggleDefault alters the default setting
+// ToggleDefault alters the default setting
 func (f *IPFilter) ToggleDefault(allowed bool) {
 	f.mut.Lock()
 	f.defaultAllowed = allowed
 	f.mut.Unlock()
 }
 
-//Allowed returns if a given IP can pass through the filter
+// Allowed returns if a given IP can pass through the filter
 func (f *IPFilter) Allowed(ipstr string) bool {
 	return f.NetAllowed(net.ParseIP(ipstr))
 }
 
-//NetAllowed returns if a given net.IP can pass through the filter
+// NetAllowed returns if a given net.IP can pass through the filter
 func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	//invalid ip
 	if ip == nil {
@@ -209,35 +217,35 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	return f.defaultAllowed
 }
 
-//Blocked returns if a given IP can NOT pass through the filter
+// Blocked returns if a given IP can NOT pass through the filter
 func (f *IPFilter) Blocked(ip string) bool {
 	return !f.Allowed(ip)
 }
 
-//NetBlocked returns if a given net.IP can NOT pass through the filter
+// NetBlocked returns if a given net.IP can NOT pass through the filter
 func (f *IPFilter) NetBlocked(ip net.IP) bool {
 	return !f.NetAllowed(ip)
 }
 
-//Wrap the provided handler with simple IP blocking middleware
-//using this IP filter and its configuration
+// Wrap the provided handler with simple IP blocking middleware
+// using this IP filter and its configuration
 func (f *IPFilter) Wrap(next http.Handler) http.Handler {
 	return &ipFilterMiddleware{IPFilter: f, next: next}
 }
 
-//Wrap is equivalent to NewLazy(opts) then Wrap(next)
+// Wrap is equivalent to NewLazy(opts) then Wrap(next)
 func Wrap(next http.Handler, opts Options) http.Handler {
 	return New(opts).Wrap(next)
 }
 
-//IPToCountry is a simple IP-country code lookup.
-//Returns an empty string when cannot determine country.
+// IPToCountry is a simple IP-country code lookup.
+// Returns an empty string when cannot determine country.
 func IPToCountry(ipstr string) string {
 	return NetIPToCountry(net.ParseIP(ipstr))
 }
 
-//NetIPToCountry is a simple IP-country code lookup.
-//Returns an empty string when cannot determine country.
+// NetIPToCountry is a simple IP-country code lookup.
+// Returns an empty string when cannot determine country.
 func NetIPToCountry(ip net.IP) string {
 	if ip != nil {
 		return string(iploc.Country(ip))
@@ -250,6 +258,7 @@ type ipFilterMiddleware struct {
 	next http.Handler
 }
 
+// ServeHTTP intercepts the HTTP request, validates the IP and either blocks the request or serves it
 func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var remoteIP string
 	if m.opts.TrustProxy {
@@ -272,12 +281,104 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.next.ServeHTTP(w, r)
 }
 
-//NewNoDB is the same as New
+// IPFilterUnaryServerInterceptor intercepts a unary gRPC call and validates if the IP is allowed
+func (f *IPFilter) IPFilterUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (interface{}, error) {
+		if clientIP, err := f.getClientIP(ctx); err == nil {
+			remoteIP, _, err := net.SplitHostPort(clientIP)
+			if err != nil || len(remoteIP) == 0 {
+				remoteIP = clientIP // Client IP mostly like doesn't have a port specified. Just use as-is
+			}
+			allowed := f.Allowed(remoteIP)
+			//special case localhost ipv4
+			if !allowed && remoteIP == "::1" && f.Allowed("127.0.0.1") {
+				allowed = true
+			}
+			if !allowed {
+				f.printf("blocked %s", remoteIP)
+				return nil, status.Errorf(codes.PermissionDenied, "not allowed to access %s", info.FullMethod)
+			}
+			//success!
+		} else {
+			f.printf("failed to detect IP address %v", err)
+			return nil, status.Errorf(codes.Unauthenticated, "unable to identify client host. not allowed to access %s", info.FullMethod)
+		}
+		return handler(ctx, req)
+	}
+}
+
+// IPFilterStreamServerInterceptor intercept a stream gRPC call and validates if the IP is allowed
+func (f *IPFilter) IPFilterStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return func(
+		srv interface{},
+		stream grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) (err error) {
+		ctx := stream.Context()
+		if clientIP, err := f.getClientIP(ctx); err == nil {
+			remoteIP, _, err := net.SplitHostPort(clientIP)
+			if err != nil || len(remoteIP) == 0 {
+				remoteIP = clientIP // Client IP mostly like doesn't have a port specified. Just use as-is
+			}
+			allowed := f.Allowed(remoteIP)
+			//special case localhost ipv4
+			if !allowed && remoteIP == "::1" && f.Allowed("127.0.0.1") {
+				allowed = true
+			}
+			if !allowed {
+				f.printf("blocked %s", remoteIP)
+				return status.Errorf(codes.PermissionDenied, "not allowed to access %s", info.FullMethod)
+			}
+			//success!
+		} else {
+			f.printf("failed to detect IP address %v", err)
+			return status.Errorf(codes.Unauthenticated, "unable to identify client host. not allowed to access %s", info.FullMethod)
+		}
+		return handler(srv, stream)
+	}
+}
+
+// getClientIP inspects the context to retrieve the ip address of the client
+func (f *IPFilter) getClientIP(ctx context.Context) (string, error) {
+	var clientIP string
+	// Try to figure out the source IP if we trust the proxy
+	if f.opts.TrustProxy {
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			realIP := md["x-real-ip"]
+			forwardedIP := md["x-forward-ip"]
+			forwardedFor := md["x-forward-for"]
+			if len(forwardedFor) > 0 {
+				clientIP = strings.Trim(forwardedFor[0], " ")
+			} else if len(forwardedIP) > 0 {
+				clientIP = strings.Trim(forwardedIP[0], " ")
+			} else if len(realIP) > 0 {
+				clientIP = strings.Trim(realIP[0], " ")
+			}
+		}
+	}
+	// Get the client IP from the context
+	if len(clientIP) == 0 {
+		p, ok := peer.FromContext(ctx)
+		if !ok {
+			return "", fmt.Errorf("couldn't parse client IP address")
+		}
+		clientIP = p.Addr.String()
+	}
+	return clientIP, nil
+}
+
+// NewNoDB is the same as New
 func NewNoDB(opts Options) *IPFilter {
 	return New(opts)
 }
 
-//NewLazy is the same as New
+// NewLazy is the same as New
 func NewLazy(opts Options) *IPFilter {
 	return New(opts)
 }
