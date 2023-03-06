@@ -1,0 +1,21 @@
+name: Golang CI Lint
+# This workflow will run the golangci-lint analysis
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.17
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3

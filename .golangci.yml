@@ -1,0 +1,74 @@
+run:
+  timeout: 3m
+  skip-dirs:
+    - tests
+
+linters-settings:
+  cyclop:
+    max-complexity: 30
+    package-average: 10.0
+
+  errcheck:
+    check-type-assertions: true
+
+  exhaustive:
+    check:
+      - switch
+      - map
+
+  funlen:
+    lines: 150
+    statements: 80
+
+  gocognit:
+    min-complexity: 25
+
+  gosec:
+    excludes:
+      - G204
+
+  govet:
+    check-shadowing: true
+    enable-all: true
+    disable-all: false
+    disable:
+      - fieldalignment
+
+  nakedret:
+    max-func-lines: 10
+
+  lll:
+    line-length: 180
+
+linters:
+  enable:
+    - cyclop
+    - errname
+    - exhaustive
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - godot
+    - goimports
+    - gosec
+    - lll
+    - loggercheck
+    - makezero
+    - nakedret
+    - nilerr
+    - nilnil
+    - nolintlint
+    - nonamedreturns
+    - predeclared
+    - reassign
+    - stylecheck
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - whitespace
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocognit
