@@ -1,17 +1,17 @@
 package ipfilter_test
 
 import (
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/peer"
-
 	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 
 	"github.com/gorilla/mux"
 	"github.com/jpillora/ipfilter"
@@ -58,7 +58,6 @@ func TestSingleIPBlocked(t *testing.T) {
 	assert.True(t, f.Allowed("222.25.118.2"), "[5] should be allowed")
 	f.ToggleDefault(false)
 	assert.False(t, f.Allowed("222.25.118.2"), "[6] should be blocked")
-
 }
 
 func TestSingleIPNewLazy(t *testing.T) {
@@ -195,7 +194,7 @@ func TestServeHTTPProxyLocal(t *testing.T) {
 	assert.True(t, resp.StatusCode != http.StatusForbidden, "[1] should be allowed")
 }
 
-// gRPC testing support
+// gRPC testing support.
 var (
 	unaryInfo = &grpc.UnaryServerInfo{
 		FullMethod: "TestService.UnaryMethod",
@@ -203,6 +202,12 @@ var (
 	streamInfo = &grpc.StreamServerInfo{
 		FullMethod:     "TestService.StreamMethod",
 		IsServerStream: true,
+	}
+	unaryHandler = func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "output", nil
+	}
+	streamHandler = func(srv interface{}, stream grpc.ServerStream) error {
+		return nil
 	}
 )
 
@@ -222,9 +227,6 @@ func TestUnaryServerInterceptor(t *testing.T) {
 		BlockByDefault: true,
 		Logger:         log.New(os.Stderr, "", 0),
 	})
-	unaryHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return "output", nil
-	}
 	ctx := context.Background()
 	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
 	if err != nil {
@@ -245,9 +247,6 @@ func TestUnaryServerInterceptorBlocked(t *testing.T) {
 		BlockByDefault: true,
 		Logger:         log.New(os.Stderr, "", 0),
 	})
-	unaryHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return "output", nil
-	}
 	ctx := context.Background()
 	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
 	if err != nil {
@@ -268,9 +267,6 @@ func TestUnaryServerInterceptorNoIP(t *testing.T) {
 		BlockByDefault: true,
 		Logger:         log.New(os.Stderr, "", 0),
 	})
-	unaryHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return "output", nil
-	}
 	ctx := context.Background()
 	_, err := f.IPFilterUnaryServerInterceptor()(ctx, "xyz", unaryInfo, unaryHandler)
 	if err == nil {
@@ -285,9 +281,6 @@ func TestStreamServerInterceptor(t *testing.T) {
 		BlockByDefault: true,
 		Logger:         log.New(os.Stderr, "", 0),
 	})
-	streamHandler := func(srv interface{}, stream grpc.ServerStream) error {
-		return nil
-	}
 	ctx := context.Background()
 	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
 	if err != nil {
@@ -310,9 +303,6 @@ func TestStreamServerInterceptorBlocked(t *testing.T) {
 		BlockByDefault: true,
 		Logger:         log.New(os.Stderr, "", 0),
 	})
-	streamHandler := func(srv interface{}, stream grpc.ServerStream) error {
-		return nil
-	}
 	ctx := context.Background()
 	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
 	if err != nil {
@@ -335,9 +325,6 @@ func TestStreamServerInterceptorNoIP(t *testing.T) {
 		BlockByDefault: true,
 		Logger:         log.New(os.Stderr, "", 0),
 	})
-	streamHandler := func(srv interface{}, stream grpc.ServerStream) error {
-		return nil
-	}
 	ctx := context.Background()
 	testService := struct{}{}
 	testStream := &testServerStream{ctx: ctx}
@@ -355,9 +342,6 @@ func TestUnaryServerInterceptorProxy(t *testing.T) {
 		TrustProxy:     true,
 		Logger:         log.New(os.Stderr, "", 0),
 	})
-	unaryHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return "output", nil
-	}
 	ctx := context.Background()
 	md := metadata.Pairs("x-real-ip", "222.25.118.1")
 	ctx = metadata.NewIncomingContext(ctx, md)
@@ -381,9 +365,6 @@ func TestStreamServerInterceptorProxy(t *testing.T) {
 		TrustProxy:     true,
 		Logger:         log.New(os.Stderr, "", 0),
 	})
-	streamHandler := func(srv interface{}, stream grpc.ServerStream) error {
-		return nil
-	}
 	ctx := context.Background()
 	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
 	if err != nil {
