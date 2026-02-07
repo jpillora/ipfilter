@@ -28,19 +28,34 @@ jobs:
           # Cleanup temp file
           rm GeoLite2-Country.mmdb
 
-      - name: Check for changes
-        id: check
+      - name: Check for changes and push
         run: |
           if git diff --quiet iploc/; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "No changes to iploc data"
+            exit 0
           fi
 
-      - uses: peter-evans/create-pull-request@v5
-        if: steps.check.outputs.changed == 'true'
-        with:
-          title: 'Update iploc data from GeoLite2-Country'
-          commit-message: 'chore: update iploc data from GeoLite2-Country'
-          branch: update-geolite2
-          delete-branch: true
+          echo "Changes detected, committing and tagging..."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add iploc/
+          git commit -m "chore: update iploc data from GeoLite2-Country"
+
+          # Get latest tag and bump patch version
+          LATEST_TAG=$(git tag --sort=-v:refname | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            NEW_TAG="v1.0.0"
+          else
+            # Strip leading 'v'
+            VERSION="${LATEST_TAG#v}"
+            MAJOR=$(echo "$VERSION" | cut -d. -f1)
+            MINOR=$(echo "$VERSION" | cut -d. -f2)
+            PATCH=$(echo "$VERSION" | cut -d. -f3)
+            NEW_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+
+          echo "Tagging as $NEW_TAG"
+          git tag "$NEW_TAG"
+          git push origin master --tags
