@@ -16,7 +16,7 @@ go get github.com/jpillora/ipfilter
 * Thread-safe
 * IPv4 / IPv6 support
 * Subnet support
-* Location filtering (via [phuslu/iploc](https://github.com/phuslu/iploc))
+* Location filtering (via embedded [MaxMind GeoLite2-Country](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data) data)
 * Simple HTTP middleware
 
 ### Usage
@@ -138,3 +138,4 @@ func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 * v1.0.0 Use MaxMindDB IP data
 * v1.1.0 Use IP2Location LITE IP data
 * v1.2.3 Upgrade iploc, requires Go 1.16
+* v2.0.0 Replace phuslu/iploc with embedded MaxMind GeoLite2-Country data

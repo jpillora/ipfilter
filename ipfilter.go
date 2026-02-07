@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/phuslu/iploc"
+	"github.com/jpillora/ipfilter/iploc"
 	"github.com/tomasen/realip"
 )
 
@@ -240,7 +240,7 @@ func IPToCountry(ipstr string) string {
 //Returns an empty string when cannot determine country.
 func NetIPToCountry(ip net.IP) string {
 	if ip != nil {
-		return string(iploc.Country(ip))
+		return iploc.Country(ip)
 	}
 	return ""
 }
