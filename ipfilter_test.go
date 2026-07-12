@@ -58,6 +58,34 @@ func TestCountryCodeBlackList(t *testing.T) {
 	assert.True(t, f.Blocked(egCN), "[3] CN should be blocked")
 }
 
+// privateIPs are RFC1918/loopback/link-local/CGNAT/IPv6-ULA addresses that must
+// never be associated with a country.
+var privateIPs = []string{
+	"10.0.0.1", "172.16.0.1", "192.168.0.1", "127.0.0.1",
+	"169.254.0.1", "100.64.0.1", "::1", "fd00::1", "fe80::1",
+}
+
+// TestPrivateIPNoCountry confirms private/reserved IPs never resolve to a
+// country code.
+func TestPrivateIPNoCountry(t *testing.T) {
+	for _, ip := range privateIPs {
+		assert.Equal(t, "", ipfilter.IPToCountry(ip), "%s must have no country", ip)
+	}
+}
+
+// TestPrivateIPNotAllowedByCountryWhitelist confirms a private IP cannot slip
+// through a country whitelist by matching a bogus country. Previously e.g.
+// 10.0.0.1 resolved to "US" and would be allowed here.
+func TestPrivateIPNotAllowedByCountryWhitelist(t *testing.T) {
+	f := ipfilter.New(ipfilter.Options{
+		AllowedCountries: []string{"US"},
+		BlockByDefault:   true,
+	})
+	for _, ip := range privateIPs {
+		assert.True(t, f.Blocked(ip), "%s should be blocked, not matched to a country", ip)
+	}
+}
+
 func TestDynamicList(t *testing.T) {
 	f := ipfilter.New(ipfilter.Options{})
 	assert.True(t, f.Allowed(egCN), "[1] CN should be allowed")

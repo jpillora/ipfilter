@@ -42,6 +42,12 @@ func Country(ip net.IP) string {
 // IPCountry returns the ISO 3166-1 alpha-2 country code for the given netip.Addr.
 // Returns an empty string if the country cannot be determined.
 func IPCountry(ip netip.Addr) (country string) {
+	// Private/reserved addresses are never assigned to a country. They are
+	// absent from the data, so the binary search below would otherwise match
+	// them to the next allocated range and return a bogus country.
+	if reserved(ip) {
+		return ""
+	}
 	if ip.Is4() {
 		return ipv4Country(ip)
 	}
