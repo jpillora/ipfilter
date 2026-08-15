@@ -1,18 +1,28 @@
-on: [push, pull_request]
 name: Tests
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
-        go-version: ['1.24.x']
+        go-version: ['1.25.x', '1.26.x']
         platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
       - name: Test
         run: go test ./...
+      - name: Test compressed ASN data
+        run: go test -tags ipasn_gzip ./...
+      - name: Vet
+        run: go vet ./...

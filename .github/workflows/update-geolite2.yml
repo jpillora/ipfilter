@@ -5,21 +5,31 @@ on:
     - cron: '0 0 * * 3'  # Weekly on Wednesday
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: update-geolite2
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # fetch full history + tags so patch-bump can read the latest tag
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.24'
+          go-version: '1.26.x'
 
       - name: Download and convert GeoLite2-Country
         run: |
-          curl -sL -u "${{ secrets.MAXMIND_ACCOUNT_ID }}:${{ secrets.MAXMIND_LICENSE_KEY }}" \
+          curl --fail --show-error --silent --location --retry 3 \
+            --user "${{ secrets.MAXMIND_ACCOUNT_ID }}:${{ secrets.MAXMIND_LICENSE_KEY }}" \
             "https://download.maxmind.com/geoip/databases/GeoLite2-Country/download?suffix=tar.gz" \
             | tar -xzf - --wildcards "*/GeoLite2-Country.mmdb" --strip-components=1
 
@@ -29,7 +39,8 @@ jobs:
 
       - name: Download and convert GeoLite2-ASN
         run: |
-          curl -sL -u "${{ secrets.MAXMIND_ACCOUNT_ID }}:${{ secrets.MAXMIND_LICENSE_KEY }}" \
+          curl --fail --show-error --silent --location --retry 3 \
+            --user "${{ secrets.MAXMIND_ACCOUNT_ID }}:${{ secrets.MAXMIND_LICENSE_KEY }}" \
             "https://download.maxmind.com/geoip/databases/GeoLite2-ASN/download?suffix=tar.gz" \
             | tar -xzf - --wildcards "*/GeoLite2-ASN.mmdb" --strip-components=1
 
@@ -37,7 +48,15 @@ jobs:
 
           rm GeoLite2-ASN.mmdb
 
+      - name: Validate generated data
+        run: |
+          go test ./...
+          go test -race ./...
+          go test -tags ipasn_gzip ./...
+
       - name: Check for changes and push
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet iploc/ ipasn/; then
             echo "No changes to iploc/ipasn data"
@@ -74,4 +93,5 @@ jobs:
 
           echo "Tagging as $NEW_TAG"
           git tag "$NEW_TAG"
-          git push origin master --tags
+          git push --atomic origin master "$NEW_TAG"
+          gh release create "$NEW_TAG" --verify-tag --generate-notes --latest
