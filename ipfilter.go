@@ -1,25 +1,26 @@
 package ipfilter
 
 import (
-	"io/ioutil"
+	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/jpillora/ipfilter/iploc"
-	"github.com/tomasen/realip"
 )
 
-//Options for IPFilter. Allow supercedes Block for IP checks
-//across all matching subnets, whereas country checks use the
-//latest Allow/Block setting.
-//IPs can be IPv4 or IPv6 and can optionally contain subnet
-//masks (e.g. /24). Note however, determining if a given IP is
-//included in a subnet requires a linear scan so is less performant
-//than looking up single IPs.
+// Options for IPFilter. Allow supercedes Block for IP checks
+// across all matching subnets, whereas country checks use the
+// latest Allow/Block setting.
+// IPs can be IPv4 or IPv6 and can optionally contain subnet
+// masks (e.g. /24). Note however, determining if a given IP is
+// included in a subnet requires a linear scan so is less performant
+// than looking up single IPs.
 //
-//This could be improved with cidr range prefix tree.
+// This could be improved with cidr range prefix tree.
 type Options struct {
 	//explicity allowed IPs
 	AllowedIPs []string
@@ -31,8 +32,12 @@ type Options struct {
 	BlockedCountries []string
 	//block by default (defaults to allow)
 	BlockByDefault bool
-	// TrustProxy enable check request IP from proxy
+	// TrustProxy enables forwarded-header handling for compatibility. When set
+	// without TrustProxyCIDR, TrustProxyCIDR defaults to 0.0.0.0/0.
 	TrustProxy bool
+	// TrustProxyCIDR enables forwarded-header handling only for requests whose
+	// direct peer belongs to this network. Prefer this over TrustProxy.
+	TrustProxyCIDR string
 	// Logger enables logging, printing using the provided interface
 	Logger interface {
 		Printf(format string, v ...interface{})
@@ -53,6 +58,8 @@ type IPFilter struct {
 	ips            map[string]bool
 	codes          map[string]bool
 	subnets        []*subnet
+	trustedProxy   *net.IPNet
+	trustAllProxy  bool
 }
 
 type subnet struct {
@@ -61,17 +68,33 @@ type subnet struct {
 	allowed bool
 }
 
-//New constructs IPFilter instance without downloading DB.
+// New constructs IPFilter instance without downloading DB.
 func New(opts Options) *IPFilter {
 	if opts.Logger == nil {
 		//disable logging by default
-		opts.Logger = log.New(ioutil.Discard, "", 0)
+		opts.Logger = log.New(io.Discard, "", 0)
+	}
+	trustAllProxy := opts.TrustProxy && opts.TrustProxyCIDR == ""
+	if trustAllProxy {
+		// Preserve the original trust-all behavior for callers using the boolean
+		// API. trustAllProxy also preserves trust for IPv6 peers.
+		opts.TrustProxyCIDR = "0.0.0.0/0"
+	}
+	var trustedProxy *net.IPNet
+	if opts.TrustProxyCIDR != "" {
+		if _, network, err := net.ParseCIDR(opts.TrustProxyCIDR); err == nil {
+			trustedProxy = network
+		} else {
+			panic(fmt.Sprintf("ipfilter: invalid TrustProxyCIDR %q: %v", opts.TrustProxyCIDR, err))
+		}
 	}
 	f := &IPFilter{
 		opts:           opts,
 		ips:            map[string]bool{},
 		codes:          map[string]bool{},
 		defaultAllowed: !opts.BlockByDefault,
+		trustedProxy:   trustedProxy,
+		trustAllProxy:  trustAllProxy,
 	}
 	for _, ip := range opts.BlockedIPs {
 		f.BlockIP(ip)
@@ -150,7 +173,7 @@ func (f *IPFilter) BlockCountry(code string) {
 	f.ToggleCountry(code, false)
 }
 
-//ToggleCountry alters a specific country setting
+// ToggleCountry alters a specific country setting
 func (f *IPFilter) ToggleCountry(code string, allowed bool) {
 
 	f.mut.Lock()
@@ -158,19 +181,19 @@ func (f *IPFilter) ToggleCountry(code string, allowed bool) {
 	f.mut.Unlock()
 }
 
-//ToggleDefault alters the default setting
+// ToggleDefault alters the default setting
 func (f *IPFilter) ToggleDefault(allowed bool) {
 	f.mut.Lock()
 	f.defaultAllowed = allowed
 	f.mut.Unlock()
 }
 
-//Allowed returns if a given IP can pass through the filter
+// Allowed returns if a given IP can pass through the filter
 func (f *IPFilter) Allowed(ipstr string) bool {
 	return f.NetAllowed(net.ParseIP(ipstr))
 }
 
-//NetAllowed returns if a given net.IP can pass through the filter
+// NetAllowed returns if a given net.IP can pass through the filter
 func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	//invalid ip
 	if ip == nil {
@@ -209,35 +232,35 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	return f.defaultAllowed
 }
 
-//Blocked returns if a given IP can NOT pass through the filter
+// Blocked returns if a given IP can NOT pass through the filter
 func (f *IPFilter) Blocked(ip string) bool {
 	return !f.Allowed(ip)
 }
 
-//NetBlocked returns if a given net.IP can NOT pass through the filter
+// NetBlocked returns if a given net.IP can NOT pass through the filter
 func (f *IPFilter) NetBlocked(ip net.IP) bool {
 	return !f.NetAllowed(ip)
 }
 
-//Wrap the provided handler with simple IP blocking middleware
-//using this IP filter and its configuration
+// Wrap the provided handler with simple IP blocking middleware
+// using this IP filter and its configuration
 func (f *IPFilter) Wrap(next http.Handler) http.Handler {
 	return &ipFilterMiddleware{IPFilter: f, next: next}
 }
 
-//Wrap is equivalent to NewLazy(opts) then Wrap(next)
+// Wrap is equivalent to NewLazy(opts) then Wrap(next)
 func Wrap(next http.Handler, opts Options) http.Handler {
 	return New(opts).Wrap(next)
 }
 
-//IPToCountry is a simple IP-country code lookup.
-//Returns an empty string when cannot determine country.
+// IPToCountry is a simple IP-country code lookup.
+// Returns an empty string when cannot determine country.
 func IPToCountry(ipstr string) string {
 	return NetIPToCountry(net.ParseIP(ipstr))
 }
 
-//NetIPToCountry is a simple IP-country code lookup.
-//Returns an empty string when cannot determine country.
+// NetIPToCountry is a simple IP-country code lookup.
+// Returns an empty string when cannot determine country.
 func NetIPToCountry(ip net.IP) string {
 	if ip != nil {
 		return iploc.Country(ip)
@@ -251,11 +274,10 @@ type ipFilterMiddleware struct {
 }
 
 func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var remoteIP string
-	if m.opts.TrustProxy {
-		remoteIP = realip.FromRequest(r)
-	} else {
-		remoteIP, _, _ = net.SplitHostPort(r.RemoteAddr)
+	remoteIP := requestPeerIP(r.RemoteAddr)
+	peer := net.ParseIP(remoteIP)
+	if m.trustAllProxy || (peer != nil && m.trustedProxy != nil && m.trustedProxy.Contains(peer)) {
+		remoteIP = forwardedClientIP(r, m.trustedProxy, remoteIP, m.trustAllProxy)
 	}
 	allowed := m.IPFilter.Allowed(remoteIP)
 	//special case localhost ipv4
@@ -272,12 +294,70 @@ func (m *ipFilterMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.next.ServeHTTP(w, r)
 }
 
-//NewNoDB is the same as New
+// requestPeerIP extracts an IP from the address format used by net/http. The
+// fallback also supports requests assembled by callers with a bare RemoteAddr.
+func requestPeerIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(remoteAddr)
+}
+
+// forwardedClientIP walks X-Forwarded-For from the nearest hop to the
+// furthest, discarding trusted proxies. This prevents a client-supplied
+// left-most value from overriding the address appended by a trusted proxy.
+func forwardedClientIP(r *http.Request, trustedProxy *net.IPNet, fallback string, legacy bool) string {
+	forwardedHeader := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
+	forwarded := strings.Split(forwardedHeader, ",")
+	if legacy {
+		// Match the legacy TrustProxy behavior when the compatibility CIDR is
+		// active: use the first non-private forwarded address, then X-Real-IP.
+		if forwardedHeader != "" {
+			for _, value := range forwarded {
+				candidate := net.ParseIP(strings.TrimSpace(value))
+				if candidate != nil && !candidate.IsPrivate() && !candidate.IsLoopback() && !candidate.IsLinkLocalUnicast() {
+					return candidate.String()
+				}
+			}
+			return strings.TrimSpace(r.Header.Get("X-Real-IP"))
+		}
+		if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+			return realIP
+		}
+		return fallback
+	}
+	leftmost := ""
+	if forwardedHeader != "" {
+		for i := len(forwarded) - 1; i >= 0; i-- {
+			candidate := net.ParseIP(strings.TrimSpace(forwarded[i]))
+			if candidate == nil {
+				// A malformed hop makes every value to its left untrustworthy.
+				return fallback
+			}
+			leftmost = candidate.String()
+			if !trustedProxy.Contains(candidate) {
+				return leftmost
+			}
+		}
+	}
+	// If the complete chain is trusted, the left-most valid address is the best
+	// available client IP.
+	if leftmost != "" {
+		return leftmost
+	}
+	if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); candidate != nil {
+		return candidate.String()
+	}
+	return fallback
+}
+
+// NewNoDB is the same as New
 func NewNoDB(opts Options) *IPFilter {
 	return New(opts)
 }
 
-//NewLazy is the same as New
+// NewLazy is the same as New
 func NewLazy(opts Options) *IPFilter {
 	return New(opts)
 }

@@ -22,9 +22,12 @@ type countryRecord struct {
 }
 
 type ipRange struct {
+	start   netip.Addr
 	end     netip.Addr
 	country string
 }
+
+const unknownCountry = "ZZ"
 
 func main() {
 	mmdbPath := flag.String("mmdb", "", "path to GeoLite2-Country.mmdb")
@@ -59,14 +62,14 @@ func main() {
 
 		country := record.Country.ISOCode
 		if country == "" {
-			country = "ZZ" // Unknown
+			country = unknownCountry
 		}
 
 		// Get the last IP in the range
 		prefix := result.Prefix()
 		lastIP := lastAddr(prefix)
 
-		r := ipRange{end: lastIP, country: country}
+		r := ipRange{start: prefix.Addr(), end: lastIP, country: country}
 		if prefix.Addr().Is4() {
 			ipv4Ranges = append(ipv4Ranges, r)
 		} else {
@@ -74,13 +77,26 @@ func main() {
 		}
 	}
 
-	// Sort by end IP
+	// Sort by start IP, then explicitly represent ranges MaxMind omits. The
+	// runtime lookup stores only end boundaries and therefore requires complete,
+	// contiguous coverage to avoid assigning a gap to the following country.
 	sort.Slice(ipv4Ranges, func(i, j int) bool {
-		return ipv4Ranges[i].end.Compare(ipv4Ranges[j].end) < 0
+		return ipv4Ranges[i].start.Compare(ipv4Ranges[j].start) < 0
 	})
 	sort.Slice(ipv6Ranges, func(i, j int) bool {
-		return ipv6Ranges[i].end.Compare(ipv6Ranges[j].end) < 0
+		return ipv6Ranges[i].start.Compare(ipv6Ranges[j].start) < 0
 	})
+	ipv4SourceCount, ipv6SourceCount := len(ipv4Ranges), len(ipv6Ranges)
+	ipv4Ranges = fillGaps(ipv4Ranges, netip.AddrFrom4([4]byte{}),
+		netip.AddrFrom4([4]byte{255, 255, 255, 255}))
+	ipv6Ranges = fillGaps(ipv6Ranges, netip.IPv6Unspecified(),
+		netip.AddrFrom16([16]byte{
+			0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+		}))
+	ipv4FilledCount, ipv6FilledCount := len(ipv4Ranges), len(ipv6Ranges)
+	ipv4Ranges = coalesceRanges(ipv4Ranges)
+	ipv6Ranges = coalesceRanges(ipv6Ranges)
 
 	// Write IPv4 binary (little-endian uint32 array)
 	ipv4Bin := make([]byte, len(ipv4Ranges)*4)
@@ -121,7 +137,55 @@ func main() {
 	write("ipv6.bin", ipv6Bin)
 	write("ipv6.txt", ipv6Txt)
 
-	fmt.Printf("\nTotal: %d IPv4 ranges, %d IPv6 ranges\n", len(ipv4Ranges), len(ipv6Ranges))
+	fmt.Printf("\nIPv4 ranges: %d source, %d with gaps, %d coalesced\n",
+		ipv4SourceCount, ipv4FilledCount, len(ipv4Ranges))
+	fmt.Printf("IPv6 ranges: %d source, %d with gaps, %d coalesced\n",
+		ipv6SourceCount, ipv6FilledCount, len(ipv6Ranges))
+}
+
+// fillGaps inserts explicit unknown-country ranges before, between, and after
+// the MaxMind ranges. The result remains sorted by both start and end address.
+func fillGaps(ranges []ipRange, min, max netip.Addr) []ipRange {
+	out := make([]ipRange, 0, len(ranges)*2+1)
+	cursor := min
+	for _, r := range ranges {
+		if r.start.Compare(cursor) > 0 {
+			out = append(out, ipRange{
+				start:   cursor,
+				end:     r.start.Prev(),
+				country: unknownCountry,
+			})
+		}
+		out = append(out, r)
+		cursor = r.end.Next()
+		if !cursor.IsValid() {
+			return out
+		}
+	}
+	if cursor.Compare(max) <= 0 {
+		out = append(out, ipRange{start: cursor, end: max, country: unknownCountry})
+	}
+	return out
+}
+
+// coalesceRanges combines adjacent ranges with the same country. Lookup data
+// stores only range ends, so retaining an internal boundary has no effect.
+func coalesceRanges(ranges []ipRange) []ipRange {
+	if len(ranges) == 0 {
+		return nil
+	}
+	out := make([]ipRange, 0, len(ranges))
+	for _, r := range ranges {
+		if len(out) > 0 {
+			previous := &out[len(out)-1]
+			if previous.country == r.country && previous.end.Next() == r.start {
+				previous.end = r.end
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // lastAddr returns the last address in a prefix

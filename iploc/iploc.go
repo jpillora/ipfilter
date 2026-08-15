@@ -1,15 +1,15 @@
 // Package iploc provides fast IP to country lookup using embedded binary data
 // generated from MaxMind GeoLite2-Country database.
 //
-// The binary format is optimized for fast lookups using binary search with
-// direct memory access via unsafe pointers.
+// The binary format is optimized for fast lookups using binary search over
+// little-endian range boundaries.
 package iploc
 
 import (
 	_ "embed"
+	"encoding/binary"
 	"net"
 	"net/netip"
-	"reflect"
 	"unsafe"
 )
 
@@ -42,6 +42,10 @@ func Country(ip net.IP) string {
 // IPCountry returns the ISO 3166-1 alpha-2 country code for the given netip.Addr.
 // Returns an empty string if the country cannot be determined.
 func IPCountry(ip netip.Addr) (country string) {
+	if !ip.IsValid() {
+		return ""
+	}
+	ip = ip.Unmap()
 	// Private/reserved addresses are never assigned to a country. They are
 	// absent from the data, so the binary search below would otherwise match
 	// them to the next allocated range and return a bogus country.
@@ -66,7 +70,7 @@ func ipv4Country(ip netip.Addr) (country string) {
 	i, j := 0, len(ipv4Bin)/4
 	for i < j {
 		h := (i + j) >> 1
-		end := *(*uint32)(unsafe.Add(unsafe.Pointer(&ipv4Bin[0]), uintptr(h*4)))
+		end := binary.LittleEndian.Uint32(ipv4Bin[h*4:])
 		if end < n {
 			i = h + 1
 		} else {
@@ -78,11 +82,8 @@ func ipv4Country(ip netip.Addr) (country string) {
 		return ""
 	}
 
-	// Return country code via unsafe string construction (zero-copy)
-	sh := (*reflect.StringHeader)(unsafe.Pointer(&country))
-	sh.Data = uintptr(unsafe.Add(unsafe.Pointer(&ipv4Txt[0]), uintptr(i*2)))
-	sh.Len = 2
-	return
+	// Return country code via a zero-copy string view into immutable data.
+	return unsafe.String(&ipv4Txt[i*2], 2)
 }
 
 func ipv6Country(ip netip.Addr) (country string) {
@@ -100,8 +101,8 @@ func ipv6Country(ip netip.Addr) (country string) {
 	i, j := 0, len(ipv6Bin)/16
 	for i < j {
 		h := (i + j) >> 1
-		endHigh := *(*uint64)(unsafe.Add(unsafe.Pointer(&ipv6Bin[0]), uintptr(h*16)))
-		endLow := *(*uint64)(unsafe.Add(unsafe.Pointer(&ipv6Bin[0]), uintptr(h*16+8)))
+		endHigh := binary.LittleEndian.Uint64(ipv6Bin[h*16:])
+		endLow := binary.LittleEndian.Uint64(ipv6Bin[h*16+8:])
 		if endHigh < high || (endHigh == high && endLow < low) {
 			i = h + 1
 		} else {
@@ -113,9 +114,6 @@ func ipv6Country(ip netip.Addr) (country string) {
 		return ""
 	}
 
-	// Return country code via unsafe string construction (zero-copy)
-	sh := (*reflect.StringHeader)(unsafe.Pointer(&country))
-	sh.Data = uintptr(unsafe.Add(unsafe.Pointer(&ipv6Txt[0]), uintptr(i*2)))
-	sh.Len = 2
-	return
+	// Return country code via a zero-copy string view into immutable data.
+	return unsafe.String(&ipv6Txt[i*2], 2)
 }

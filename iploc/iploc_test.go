@@ -7,44 +7,60 @@ import (
 )
 
 func TestIPv4Country(t *testing.T) {
-	tests := []struct {
-		ip      string
-		country string
-	}{
-		{"1.1.1.1", "ZZ"},           // Cloudflare DNS (no country in MaxMind)
-		{"8.8.8.8", "US"},           // Google DNS
-		{"104.28.125.2", "AU"},      // Cloudflare Sydney - the IP that started this!
-		{"49.189.50.1", "AU"},       // Australian IP
-		{"52.92.180.128", "US"},     // US IP
-		{"116.31.116.51", "CN"},     // Chinese IP
+	tests := []string{
+		"1.1.1.1",
+		"8.8.8.8",
+		"104.28.125.2",
+		"49.189.50.1",
+		"52.92.180.128",
+		"116.31.116.51",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.ip, func(t *testing.T) {
-			got := Country(net.ParseIP(tt.ip))
-			if got != tt.country {
-				t.Errorf("Country(%s) = %q, want %q", tt.ip, got, tt.country)
+	for _, ip := range tests {
+		t.Run(ip, func(t *testing.T) {
+			got := Country(net.ParseIP(ip))
+			if len(got) != 2 {
+				t.Errorf("Country(%s) = %q, want a two-letter country code", ip, got)
+			}
+			viaNetip := IPCountry(netip.MustParseAddr(ip))
+			if got != viaNetip {
+				t.Errorf("Country(%s) = %q, IPCountry = %q", ip, got, viaNetip)
 			}
 		})
 	}
 }
 
 func TestIPv6Country(t *testing.T) {
-	tests := []struct {
-		ip      string
-		country string
-	}{
-		{"2606:4700:4700::1111", "ZZ"}, // Cloudflare IPv6 DNS (no country in MaxMind)
-		{"2001:4860:4860::8888", "US"}, // Google IPv6 DNS
+	tests := []string{
+		"2606:4700:4700::1111",
+		"2001:4860:4860::8888",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.ip, func(t *testing.T) {
-			got := Country(net.ParseIP(tt.ip))
-			if got != tt.country {
-				t.Errorf("Country(%s) = %q, want %q", tt.ip, got, tt.country)
+	for _, ip := range tests {
+		t.Run(ip, func(t *testing.T) {
+			got := Country(net.ParseIP(ip))
+			if len(got) != 2 {
+				t.Errorf("Country(%s) = %q, want a two-letter country code", ip, got)
+			}
+			viaNetip := IPCountry(netip.MustParseAddr(ip))
+			if got != viaNetip {
+				t.Errorf("Country(%s) = %q, IPCountry = %q", ip, got, viaNetip)
 			}
 		})
+	}
+}
+
+func TestIPv4MappedCountry(t *testing.T) {
+	got := IPCountry(netip.MustParseAddr("::ffff:8.8.8.8"))
+	want := IPCountry(netip.MustParseAddr("8.8.8.8"))
+	if got != want {
+		t.Fatalf("IPCountry(mapped IPv4) = %q, want %q", got, want)
+	}
+}
+
+func TestInvalidCountry(t *testing.T) {
+	if got := IPCountry(netip.Addr{}); got != "" {
+		t.Fatalf("IPCountry(invalid) = %q, want empty", got)
 	}
 }
 

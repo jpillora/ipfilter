@@ -6,9 +6,9 @@
 package ipasn
 
 import (
+	"encoding/binary"
 	"net"
 	"net/netip"
-	"reflect"
 	"unsafe"
 )
 
@@ -41,6 +41,10 @@ func Lookup(ip net.IP) ASN {
 
 // IPLookup returns the ASN for the given netip.Addr. Zero value if not found.
 func IPLookup(ip netip.Addr) ASN {
+	if !ip.IsValid() {
+		return ASN{}
+	}
+	ip = ip.Unmap()
 	if ip.Is4() {
 		return ipv4Lookup(ip)
 	}
@@ -58,7 +62,7 @@ func ipv4Lookup(ip netip.Addr) ASN {
 	i, j := 0, len(ipv4Bin)/4
 	for i < j {
 		h := (i + j) >> 1
-		end := *(*uint32)(unsafe.Add(unsafe.Pointer(&ipv4Bin[0]), uintptr(h*4)))
+		end := binary.LittleEndian.Uint32(ipv4Bin[h*4:])
 		if end < n {
 			i = h + 1
 		} else {
@@ -69,7 +73,7 @@ func ipv4Lookup(ip netip.Addr) ASN {
 	if i >= len(ipv4Idx)/4 {
 		return ASN{}
 	}
-	asnIdx := *(*uint32)(unsafe.Add(unsafe.Pointer(&ipv4Idx[0]), uintptr(i*4)))
+	asnIdx := binary.LittleEndian.Uint32(ipv4Idx[i*4:])
 	return readASN(asnIdx)
 }
 
@@ -87,8 +91,8 @@ func ipv6Lookup(ip netip.Addr) ASN {
 	i, j := 0, len(ipv6Bin)/16
 	for i < j {
 		h := (i + j) >> 1
-		endHigh := *(*uint64)(unsafe.Add(unsafe.Pointer(&ipv6Bin[0]), uintptr(h*16)))
-		endLow := *(*uint64)(unsafe.Add(unsafe.Pointer(&ipv6Bin[0]), uintptr(h*16+8)))
+		endHigh := binary.LittleEndian.Uint64(ipv6Bin[h*16:])
+		endLow := binary.LittleEndian.Uint64(ipv6Bin[h*16+8:])
 		if endHigh < high || (endHigh == high && endLow < low) {
 			i = h + 1
 		} else {
@@ -99,26 +103,26 @@ func ipv6Lookup(ip netip.Addr) ASN {
 	if i >= len(ipv6Idx)/4 {
 		return ASN{}
 	}
-	asnIdx := *(*uint32)(unsafe.Add(unsafe.Pointer(&ipv6Idx[0]), uintptr(i*4)))
+	asnIdx := binary.LittleEndian.Uint32(ipv6Idx[i*4:])
 	return readASN(asnIdx)
 }
 
 // readASN reads ASN record at index from asn.bin and returns ASN with org
 // constructed as a zero-copy string view into orgs.txt.
 func readASN(idx uint32) ASN {
-	base := uintptr(idx) * 12
-	if int(base)+12 > len(asnBin) {
+	base64 := int64(idx) * 12
+	if base64+12 > int64(len(asnBin)) {
 		return ASN{}
 	}
-	num := *(*uint32)(unsafe.Add(unsafe.Pointer(&asnBin[0]), base))
-	off := *(*uint32)(unsafe.Add(unsafe.Pointer(&asnBin[0]), base+4))
-	ln := *(*uint16)(unsafe.Add(unsafe.Pointer(&asnBin[0]), base+8))
+	base := int(base64)
+	num := binary.LittleEndian.Uint32(asnBin[base:])
+	off := binary.LittleEndian.Uint32(asnBin[base+4:])
+	ln := binary.LittleEndian.Uint16(asnBin[base+8:])
 
 	var org string
-	if ln > 0 && int(off)+int(ln) <= len(orgsTxt) {
-		sh := (*reflect.StringHeader)(unsafe.Pointer(&org))
-		sh.Data = uintptr(unsafe.Add(unsafe.Pointer(&orgsTxt[0]), uintptr(off)))
-		sh.Len = int(ln)
+	orgEnd := uint64(off) + uint64(ln)
+	if ln > 0 && orgEnd <= uint64(len(orgsTxt)) {
+		org = unsafe.String(&orgsTxt[int(off)], int(ln))
 	}
 	return ASN{Number: num, Org: org}
 }
