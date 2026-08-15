@@ -2,13 +2,15 @@
 
 A package for IP Filtering in Go (golang)
 
-[![GoDoc](https://godoc.org/github.com/jpillora/ipfilter?status.svg)](https://pkg.go.dev/github.com/jpillora/ipfilter?tab=doc)  [![Tests](https://github.com/jpillora/ipfilter/workflows/Tests/badge.svg)](https://github.com/jpillora/ipfilter/actions?workflow=Tests)
+[![Go Reference](https://pkg.go.dev/badge/github.com/jpillora/ipfilter.svg)](https://pkg.go.dev/github.com/jpillora/ipfilter) [![Tests](https://github.com/jpillora/ipfilter/actions/workflows/test.yml/badge.svg)](https://github.com/jpillora/ipfilter/actions/workflows/test.yml)
 
 ### Install
 
 ```
 go get github.com/jpillora/ipfilter
 ```
+
+Requires Go 1.25 or newer.
 
 ### Features
 
@@ -31,6 +33,24 @@ myProtectedHandler := ipfilter.Wrap(h, ipfilter.Options{
 })
 http.ListenAndServe(":8080", myProtectedHandler)
 ```
+
+**Trusted reverse proxy middleware**
+
+Only accept forwarding headers when the direct peer belongs to your proxy
+network:
+
+```go
+myProtectedHandler := ipfilter.Wrap(h, ipfilter.Options{
+    BlockedCountries: []string{"CN", "RU"},
+    TrustProxyCIDR:   "10.0.0.0/8",
+})
+```
+
+`TrustProxy: true` remains supported with its legacy trust-all behavior; its
+compatibility CIDR defaults to `0.0.0.0/0` while still accepting IPv6 proxy
+peers. Prefer an explicit, narrow `TrustProxyCIDR` for new code. Invalid CIDRs
+panic during construction so a proxy configuration typo cannot silently weaken
+the filter.
 
 **Country-block stand-alone**
 
@@ -131,11 +151,13 @@ func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 #### Credits
 
-* This site or product includes IP2Location LITE data available from http://www.ip2location.com
+* This product includes GeoLite2 data created by MaxMind, available from
+  https://www.maxmind.com.
 
 #### Change log
 
 * v1.0.0 Use MaxMindDB IP data
 * v1.1.0 Use IP2Location LITE IP data
 * v1.2.3 Upgrade iploc, requires Go 1.16
-* v2.0.0 Replace phuslu/iploc with embedded MaxMind GeoLite2-Country data
+* v1.3.0 Replace phuslu/iploc with embedded MaxMind GeoLite2-Country data
+* v1.4.0 Add embedded MaxMind GeoLite2-ASN lookups
