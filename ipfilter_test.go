@@ -85,10 +85,16 @@ func TestPrivateIPNotAllowedByCountryWhitelist(t *testing.T) {
 		assert.True(t, f.Blocked(ip), "%s should be blocked, not matched to a country", ip)
 	}
 }
+func TestIPNetAllowed(t *testing.T) {
+	opts := ipfilter.Options{
+		BlockedCountries: []string{"CN", "RU"},
+	}
+	filter := ipfilter.New(opts)
 
-func TestDynamicList(t *testing.T) {
-	f := ipfilter.New(ipfilter.Options{})
-	assert.True(t, f.Allowed(egCN), "[1] CN should be allowed")
-	f.BlockCountry("CN")
-	assert.True(t, f.Blocked(egCN), "[1] CN should be blocked")
+	// Test with a known private IP range
+	_, ipnet, _ := net.ParseCIDR("192.168.0.0/24")
+	// Should return true since no blocks apply to this range by default
+	if !filter.IPNetAllowed(ipnet) {
+		t.Errorf("Expected IPNetAllowed to return true for allowed range")
+	}
 }

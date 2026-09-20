@@ -289,3 +289,34 @@ func (f *IPFilter) IPToCountry(ipstr string) string {
 func (f *IPFilter) NetIPToCountry(ip net.IP) string {
 	return NetIPToCountry(ip)
 }
+
+// IPNetAllowed checks if an IP is allowed within any of the configured subnets.
+// This is useful for bulk operations where you want to check an entire CIDR block.
+func (f *IPFilter) IPNetAllowed(ipnet *net.IPNet) bool {
+	if ipnet == nil {
+		return false
+	}
+	// Check all IPs in the subnet (limited to first 256 for performance)
+	var ipsToCheck [256]net.IP
+	count := 0
+	for ip := ipnet.IP; count < 256 && ipnet.Contains(ip); count++ {
+		ipsToCheck[count] = make(net.IP, len(ip))
+		copy(ipsToCheck[count], ip)
+		incIP(ip)
+	}
+	for i := 0; i < count; i++ {
+		if !f.NetAllowed(ipsToCheck[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func incIP(ip net.IP) {
+	for i := len(ip) - 1; i >= 0; i-- {
+		ip[i]++
+		if ip[i] > 0 {
+			break
+		}
+	}
+}
