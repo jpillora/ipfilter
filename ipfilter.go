@@ -302,7 +302,7 @@ func (f *IPFilter) IPNetAllowed(ipnet *net.IPNet) bool {
 	for ip := ipnet.IP; count < 256 && ipnet.Contains(ip); count++ {
 		ipsToCheck[count] = make(net.IP, len(ip))
 		copy(ipsToCheck[count], ip)
-		incIP(ip)
+		if !incIP(ip) { break }
 	}
 	for i := 0; i < count; i++ {
 		if !f.NetAllowed(ipsToCheck[i]) {
@@ -312,8 +312,11 @@ func (f *IPFilter) IPNetAllowed(ipnet *net.IPNet) bool {
 	return true
 }
 
-func incIP(ip net.IP) {
+func incIP(ip net.IP) bool {
 	for i := len(ip) - 1; i >= 0; i-- {
+		if ip[i] == 255 {
+			return false
+		}
 		ip[i]++
 		if ip[i] > 0 {
 			break
