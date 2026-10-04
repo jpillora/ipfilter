@@ -17,7 +17,7 @@ Requires Go 1.25 or newer.
 * Simple
 * Thread-safe
 * IPv4 / IPv6 support
-* Subnet support
+* Subnet support with prefix tree lookups
 * Location filtering (via embedded [MaxMind GeoLite2-Country](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data) data)
 * Simple HTTP middleware
 
@@ -144,7 +144,6 @@ func (m *myMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 #### Todo
 
-* Use a good algorithm to perform faster prefix matches
 * Investigate reliability of other detectable attributes
 * Add TOR/anonymizer filter options
 * Add great-circle distance filter options (e.g. Allow 500KM radius from code/lat,lon)

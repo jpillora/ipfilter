@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/oschwald/maxminddb-golang/v2 v2.5.0
 	github.com/stretchr/testify v1.11.1
+	github.com/yl2chen/cidranger v1.0.2
 )
 
 require (

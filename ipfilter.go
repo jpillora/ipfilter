@@ -10,17 +10,15 @@ import (
 	"sync"
 
 	"github.com/jpillora/ipfilter/iploc"
+	"github.com/yl2chen/cidranger"
 )
 
 // Options for IPFilter. Allow supercedes Block for IP checks
 // across all matching subnets, whereas country checks use the
 // latest Allow/Block setting.
 // IPs can be IPv4 or IPv6 and can optionally contain subnet
-// masks (e.g. /24). Note however, determining if a given IP is
-// included in a subnet requires a linear scan so is less performant
-// than looking up single IPs.
-//
-// This could be improved with cidr range prefix tree.
+// masks (e.g. /24). Subnets are indexed in a path-compressed prefix
+// tree, so lookups do not scan unrelated subnet rules.
 type Options struct {
 	//explicity allowed IPs
 	AllowedIPs []string
@@ -57,15 +55,20 @@ type IPFilter struct {
 	defaultAllowed bool
 	ips            map[string]bool
 	codes          map[string]bool
-	subnets        []*subnet
+	subnets        cidranger.Ranger
+	subnetRules    map[string]*subnet
 	trustedProxy   *net.IPNet
 	trustAllProxy  bool
 }
 
 type subnet struct {
-	str     string
-	ipnet   *net.IPNet
-	allowed bool
+	ipnet        *net.IPNet
+	rules        map[string]bool
+	allowedRules int
+}
+
+func (s *subnet) Network() net.IPNet {
+	return *s.ipnet
 }
 
 // New constructs IPFilter instance without downloading DB.
@@ -93,6 +96,8 @@ func New(opts Options) *IPFilter {
 		ips:            map[string]bool{},
 		codes:          map[string]bool{},
 		defaultAllowed: !opts.BlockByDefault,
+		subnets:        cidranger.NewPCTrieRanger(),
+		subnetRules:    map[string]*subnet{},
 		trustedProxy:   trustedProxy,
 		trustAllProxy:  trustAllProxy,
 	}
@@ -127,32 +132,41 @@ func (f *IPFilter) BlockIP(ip string) bool {
 
 func (f *IPFilter) ToggleIP(str string, allowed bool) bool {
 	//check if has subnet
-	if ip, net, err := net.ParseCIDR(str); err == nil {
+	if ip, network, err := net.ParseCIDR(str); err == nil {
 		// containing only one ip? (no bits masked)
-		if n, total := net.Mask.Size(); n == total {
+		if n, total := network.Mask.Size(); n == total {
 			f.mut.Lock()
 			f.ips[ip.String()] = allowed
 			f.mut.Unlock()
 			return true
 		}
-		//check for existing
+		// Match net.IPNet.Contains semantics for IPv4-mapped IPv6 CIDRs.
+		// cidranger requires the mask and address to have the same width.
+		if ip4 := network.IP.To4(); ip4 != nil {
+			network.IP = ip4
+			network.Mask = network.Mask[len(network.Mask)-net.IPv4len:]
+		}
 		f.mut.Lock()
-		found := false
-		for _, subnet := range f.subnets {
-			if subnet.str == str {
-				found = true
-				subnet.allowed = allowed
-				break
+		defer f.mut.Unlock()
+		key := network.String()
+		entry := f.subnetRules[key]
+		if entry == nil {
+			entry = &subnet{ipnet: network, rules: map[string]bool{}}
+			if err := f.subnets.Insert(entry); err != nil {
+				return false
+			}
+			f.subnetRules[key] = entry
+		}
+		// Preserve independent rules for different strings describing the same
+		// network. Any allowed rule takes precedence over its blocked aliases.
+		if entry.rules[str] != allowed {
+			if allowed {
+				entry.allowedRules++
+			} else {
+				entry.allowedRules--
 			}
 		}
-		if !found {
-			f.subnets = append(f.subnets, &subnet{
-				str:     str,
-				ipnet:   net,
-				allowed: allowed,
-			})
-		}
-		f.mut.Unlock()
+		entry.rules[str] = allowed
 		return true
 	}
 	//check if plain ip (/32)
@@ -208,18 +222,17 @@ func (f *IPFilter) NetAllowed(ip net.IP) bool {
 	if ok {
 		return allowed
 	}
-	//scan subnets for any allow/block
-	blocked := false
-	for _, subnet := range f.subnets {
-		if subnet.ipnet.Contains(ip) {
-			if subnet.allowed {
-				return true
+	// Inspect only matching prefixes. Any allow wins across all matches,
+	// rather than applying just the longest matching prefix.
+	if f.subnets != nil && f.subnets.Len() > 0 {
+		if matches, err := f.subnets.ContainingNetworks(ip); err == nil && len(matches) > 0 {
+			for _, match := range matches {
+				if match.(*subnet).allowedRules > 0 {
+					return true
+				}
 			}
-			blocked = true
+			return false
 		}
-	}
-	if blocked {
-		return false
 	}
 	//check country codes
 	code := NetIPToCountry(ip)
